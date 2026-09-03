@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../features/auth/login/login_screen.dart';
 import '../features/auth/signup/signup_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
+import '../features/recovery/customer_recovery_screen.dart';
 import '../services/auth_service.dart';
 
 /// Central routing configuration and route-guarding for the Revive application.
@@ -17,6 +18,7 @@ class AppRoutes {
   static const String recovery = '/recovery';
   static const String simulator = '/simulator';
   static const String settings = '/settings';
+  static const String recover = '/recover';
 
   /// Application named routes map.
   static final Map<String, WidgetBuilder> routes = {
@@ -28,7 +30,41 @@ class AppRoutes {
     recovery: (context) => const DashboardScreen(initialRoute: recovery),
     simulator: (context) => const DashboardScreen(initialRoute: simulator),
     settings: (context) => const DashboardScreen(initialRoute: settings),
+    recover: (context) => const CustomerRecoveryScreen(),
   };
+
+  /// Dynamic route generator for handling deep links (e.g. /recover/:sessionId?token=...).
+  static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
+    final name = settings.name ?? '';
+    final uri = Uri.tryParse(name);
+
+    if (uri != null && uri.path.startsWith('/recover')) {
+      final segments = uri.pathSegments;
+      String? sessionId;
+      if (segments.length >= 2) {
+        sessionId = segments[1];
+      }
+      final token = uri.queryParameters['token'];
+
+      return MaterialPageRoute<dynamic>(
+        settings: settings,
+        builder: (context) => CustomerRecoveryScreen(
+          sessionId: sessionId,
+          token: token,
+        ),
+      );
+    }
+
+    final builder = routes[name];
+    if (builder != null) {
+      return MaterialPageRoute<dynamic>(
+        settings: settings,
+        builder: builder,
+      );
+    }
+
+    return null;
+  }
 }
 
 /// Authentication gate widget ensuring protected merchant access.

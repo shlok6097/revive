@@ -89,5 +89,11 @@ service cloud.firestore {
     match /processed_recoveries/{executionId} {
       allow read, write: if false; // Admin/Backend only
     }
+
+    // 11. Recovery Sessions Collection (Phase 8) — Merchant readable, backend-only mutations
+    match /recovery_sessions/{sessionId} {
+      allow read: if isDocumentMerchant();
+      allow write: if false; // Only backend Admin SDK can create or mutate sessions
+    }
   }
 }

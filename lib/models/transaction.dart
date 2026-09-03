@@ -3,7 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Represents a payment transaction processed or monitored by Revive.
 ///
 /// Retains granular, structured failure taxonomy ([errorCode], [errorReason],
-/// [errorSource], [errorStep]) to empower REVIVE's recovery classification engine.
+/// [errorSource], [errorStep]) and Phase 8 recovery outcome metadata ([recoveryOutcome],
+/// [recoveredAt], [recoverySessionId]).
 class TransactionModel {
   const TransactionModel({
     required this.id,
@@ -18,6 +19,9 @@ class TransactionModel {
     this.errorSource,
     this.errorStep,
     this.customerId,
+    this.recoveryOutcome,
+    this.recoveredAt,
+    this.recoverySessionId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -58,11 +62,22 @@ class TransactionModel {
   /// Associated customer ID if linked.
   final String? customerId;
 
+  /// Structured recovery outcome ('RECOVERED', 'NOT_RECOVERED', 'EXPIRED', 'CANCELLED').
+  final String? recoveryOutcome;
+
+  /// Timestamp when transaction was successfully recovered.
+  final DateTime? recoveredAt;
+
+  /// ID of the recovery session that facilitated recovery.
+  final String? recoverySessionId;
+
   /// Creation timestamp.
   final DateTime createdAt;
 
   /// Last modification timestamp.
   final DateTime updatedAt;
+
+  bool get isRecovered => status == 'RECOVERED' || recoveryOutcome == 'RECOVERED';
 
   /// Creates a [TransactionModel] from Firestore document snapshot.
   factory TransactionModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -85,6 +100,9 @@ class TransactionModel {
       errorSource: data['errorSource'] as String?,
       errorStep: data['errorStep'] as String?,
       customerId: data['customerId'] as String?,
+      recoveryOutcome: data['recoveryOutcome'] as String?,
+      recoveredAt: (data['recoveredAt'] as Timestamp?)?.toDate(),
+      recoverySessionId: data['recoverySessionId'] as String?,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -104,6 +122,9 @@ class TransactionModel {
       'errorSource': errorSource,
       'errorStep': errorStep,
       'customerId': customerId,
+      'recoveryOutcome': recoveryOutcome,
+      'recoveredAt': recoveredAt != null ? Timestamp.fromDate(recoveredAt!) : null,
+      'recoverySessionId': recoverySessionId,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
@@ -123,6 +144,9 @@ class TransactionModel {
     String? errorSource,
     String? errorStep,
     String? customerId,
+    String? recoveryOutcome,
+    DateTime? recoveredAt,
+    String? recoverySessionId,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -139,6 +163,9 @@ class TransactionModel {
       errorSource: errorSource ?? this.errorSource,
       errorStep: errorStep ?? this.errorStep,
       customerId: customerId ?? this.customerId,
+      recoveryOutcome: recoveryOutcome ?? this.recoveryOutcome,
+      recoveredAt: recoveredAt ?? this.recoveredAt,
+      recoverySessionId: recoverySessionId ?? this.recoverySessionId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

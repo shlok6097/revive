@@ -78,6 +78,7 @@ class ReviveApp extends StatelessWidget {
       ),
       initialRoute: AppRoutes.root,
       routes: AppRoutes.routes,
+      onGenerateRoute: AppRoutes.onGenerateRoute,
     );
   }
 }

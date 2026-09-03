@@ -5,6 +5,7 @@ class Customer {
   const Customer({
     required this.id,
     required this.merchantId,
+    this.externalCustomerId,
     required this.name,
     required this.email,
     required this.phone,
@@ -17,6 +18,9 @@ class Customer {
 
   /// Associated Merchant ID (Firebase Auth UID).
   final String merchantId;
+
+  /// External Customer ID in Razorpay or payment aggregator.
+  final String? externalCustomerId;
 
   /// Customer full name.
   final String name;
@@ -44,6 +48,7 @@ class Customer {
     return Customer(
       id: id,
       merchantId: data['merchantId'] as String? ?? '',
+      externalCustomerId: data['externalCustomerId'] as String?,
       name: data['name'] as String? ?? '',
       email: data['email'] as String? ?? '',
       phone: data['phone'] as String? ?? '',
@@ -56,6 +61,7 @@ class Customer {
   Map<String, dynamic> toFirestore() {
     return {
       'merchantId': merchantId,
+      'externalCustomerId': externalCustomerId,
       'name': name,
       'email': email,
       'phone': phone,
@@ -68,6 +74,7 @@ class Customer {
   Customer copyWith({
     String? id,
     String? merchantId,
+    String? externalCustomerId,
     String? name,
     String? email,
     String? phone,
@@ -77,6 +84,7 @@ class Customer {
     return Customer(
       id: id ?? this.id,
       merchantId: merchantId ?? this.merchantId,
+      externalCustomerId: externalCustomerId ?? this.externalCustomerId,
       name: name ?? this.name,
       email: email ?? this.email,
       phone: phone ?? this.phone,

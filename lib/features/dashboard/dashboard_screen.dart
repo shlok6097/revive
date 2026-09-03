@@ -9,6 +9,8 @@ import '../../widgets/metric_card.dart';
 import '../../widgets/razorpay_connection_card.dart';
 import '../../widgets/recovery_strategy_card.dart';
 import '../../widgets/status_badge.dart';
+import '../recovery/customer_recovery_screen.dart';
+import '../../services/recovery_session_client.dart';
 import 'mock_dashboard_data.dart';
 
 /// Main Razorpay-inspired fintech dashboard for merchants.
@@ -338,6 +340,104 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             child: const Text(
                               'No real payment action has been executed (Phase 6 Simulation Mode).',
                               style: TextStyle(fontSize: 11, color: Color(0xFF15803D), fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  if (tx.errorCode != null || tx.status == 'FAILED' || tx.status == 'RECOVERED') ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'SMART RECOVERY LINK & CUSTOMER SESSION',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildDetailRow('Strategy', tx.errorCode == 'GATEWAY_TIMEOUT' ? 'RETRY' : 'ALTERNATIVE_METHOD'),
+                          const Divider(height: 16),
+                          _buildDetailRow(
+                            'Session Status',
+                            tx.status == 'RECOVERED' ? 'USED' : 'ACTIVE',
+                            valueStyle: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: tx.status == 'RECOVERED' ? const Color(0xFF15803D) : const Color(0xFF2563EB),
+                            ),
+                          ),
+                          const Divider(height: 16),
+                          _buildDetailRow('Recovery Link', '/recover/ses_${tx.id}?token=...'),
+                          const Divider(height: 16),
+                          _buildDetailRow('Expires', tx.status == 'RECOVERED' ? 'Completed' : '14 min remaining'),
+                          const Divider(height: 16),
+                          _buildDetailRow(
+                            'Outcome',
+                            tx.status == 'RECOVERED' ? 'Completed' : 'Awaiting Customer',
+                            valueStyle: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: tx.status == 'RECOVERED' ? const Color(0xFF15803D) : const Color(0xFFD97706),
+                            ),
+                          ),
+                          if (tx.status == 'RECOVERED') ...[
+                            const Divider(height: 16),
+                            _buildDetailRow(
+                              'Recovered At',
+                              tx.recoveredAt != null
+                                  ? tx.recoveredAt!.toLocal().toString().split('.')[0]
+                                  : '04 Sep 2026, 11:42 PM',
+                              valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.pop(dialogContext);
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (context) => CustomerRecoveryScreen(
+                                      sessionId: 'ses_${tx.id}',
+                                      token: 'tok_${tx.id}_secure',
+                                      mockValidation: CustomerRecoveryValidation(
+                                        valid: true,
+                                        sessionId: 'ses_${tx.id}',
+                                        transactionId: tx.id,
+                                        amount: tx.amount,
+                                        currency: tx.currency,
+                                        paymentMethod: tx.paymentMethod,
+                                        bank: tx.bank,
+                                        strategy: tx.errorCode == 'GATEWAY_TIMEOUT' ? 'RETRY' : 'ALTERNATIVE_METHOD',
+                                        title: tx.errorCode == 'GATEWAY_TIMEOUT' ? 'Payment could not be completed' : 'Payment method unavailable',
+                                        message: tx.errorCode == 'GATEWAY_TIMEOUT' ? "We couldn't complete your payment. Please try again." : "We couldn't complete your payment using this method. You can try another payment method.",
+                                        actionPrompt: tx.errorCode == 'GATEWAY_TIMEOUT' ? 'Try Payment Again' : 'Use Another Method',
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              ),
+                              icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                              label: const Text('Open Customer Recovery Preview', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                             ),
                           ),
                         ],
@@ -700,8 +800,208 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 24.0),
 
+          // Recovery Performance & Customer Recovery Funnel (Phase 8)
+          _buildRecoveryPerformanceCard(),
+          const SizedBox(height: 24.0),
+
           // Recent Transactions Table Card
           _buildTransactionsCard(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecoveryPerformanceCard() {
+    return Container(
+      padding: const EdgeInsets.all(20.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12.0),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.link_rounded,
+                      size: 20,
+                      color: Color(0xFF16A34A),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'CUSTOMER RECOVERY & SMART LINKS',
+                        style: TextStyle(
+                          fontSize: 11.0,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF94A3B8),
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      Text(
+                        'Recovery Performance',
+                        style: TextStyle(
+                          fontSize: 16.0,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (context) => const CustomerRecoveryScreen(
+                        sessionId: 'ses_demo_123',
+                        token: 'tok_demo_secure_hash',
+                      ),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF16A34A),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                label: const Text('Simulate Recovery Link', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+
+          // 3 Metric Tiles
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth > 600;
+              final width = isWide ? (constraints.maxWidth - 24) / 3 : constraints.maxWidth;
+
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _buildPerfMetricTile('Recovered Payments', '24', '+4 today', const Color(0xFF16A34A), width),
+                  _buildPerfMetricTile('Recovery Rate', '68%', 'industry avg: 22%', const Color(0xFF2563EB), width),
+                  _buildPerfMetricTile('Active Recovery Sessions', '3', 'expiring in <30m', const Color(0xFFD97706), width),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 18),
+
+          // Recent Recoveries List
+          const Text(
+            'Recent Recoveries',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF475569), letterSpacing: 0.5),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              children: [
+                _buildRecentRecoveryItem('₹1,250', 'UPI', 'Recovered', const Color(0xFF16A34A), const Color(0xFFF0FDF4), '2m ago'),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                _buildRecentRecoveryItem('₹850', 'Card', 'Recovered', const Color(0xFF16A34A), const Color(0xFFF0FDF4), '14m ago'),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                _buildRecentRecoveryItem('₹420', 'UPI', 'Expired', const Color(0xFFD97706), const Color(0xFFFFFBEB), '45m ago'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPerfMetricTile(String label, String value, String subtitle, Color valueColor, double width) {
+    return Container(
+      width: width,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: valueColor)),
+              Text(subtitle, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentRecoveryItem(String amount, String method, String status, Color statusColor, Color statusBg, String time) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Text(amount, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(4)),
+                child: Text(method, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(color: statusBg, borderRadius: BorderRadius.circular(4)),
+                child: Text(status, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: statusColor)),
+              ),
+              const SizedBox(width: 8),
+              Text(time, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+            ],
+          ),
         ],
       ),
     );
