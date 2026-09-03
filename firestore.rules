@@ -3,21 +3,80 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // -------------------------------------------------------------------------
-    // Phase 1 Foundation Security Rules (Revive)
+    // Revive Security Rules — Phase 2: Strict Merchant Isolation
     // -------------------------------------------------------------------------
-    // CONSERVATIVE DEVELOPMENT CONFIGURATION:
-    // Requires standard user authentication for read and write operations.
-    //
-    // PRODUCTION SECURITY WARNING / REQUIRED HARDENING:
-    // 1. Document-level authorization: Restrict users to accessing/modifying
-    //    only their own user profile data (e.g. /users/{userId}/...).
-    // 2. Collection-specific validations: Enforce schema and field integrity
-    //    for transactions, recovery records, and simulation configurations.
-    // 3. Prevent arbitrary writes by untrusted or unverified accounts.
+    // Authentication & Merchant Isolation Invariants:
+    // 1. All document operations require authenticated Firebase credentials.
+    // 2. A merchant can only create, view, or mutate documents scoped to their
+    //    own Firebase Auth UID (merchantId == request.auth.uid).
+    // 3. Cross-merchant read or write access is strictly forbidden.
+    // 4. Audit logs are append-only (immutable once written).
     // -------------------------------------------------------------------------
 
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(merchantId) {
+      return isAuthenticated() && request.auth.uid == merchantId;
+    }
+
+    function isDocumentMerchant() {
+      return isAuthenticated() && resource.data.merchantId == request.auth.uid;
+    }
+
+    function isIncomingMerchant() {
+      return isAuthenticated() && request.resource.data.merchantId == request.auth.uid;
+    }
+
+    // 1. Merchants Collection — 1:1 mapped to Firebase Auth UID
+    match /merchants/{merchantId} {
+      allow read, write: if isOwner(merchantId);
+    }
+
+    // 2. Transactions Collection — scoped by merchantId
+    match /transactions/{transactionId} {
+      allow read, update, delete: if isDocumentMerchant();
+      allow create: if isIncomingMerchant();
+    }
+
+    // 3. Customers Collection — scoped by merchantId
+    match /customers/{customerId} {
+      allow read, update, delete: if isDocumentMerchant();
+      allow create: if isIncomingMerchant();
+    }
+
+    // 4. Recovery Attempts Collection — scoped by merchantId
+    match /recovery_attempts/{attemptId} {
+      allow read, update, delete: if isDocumentMerchant();
+      allow create: if isIncomingMerchant();
+    }
+
+    // 5. AI Decisions Collection — scoped by merchantId
+    match /ai_decisions/{decisionId} {
+      allow read, update, delete: if isDocumentMerchant();
+      allow create: if isIncomingMerchant();
+    }
+
+    // 6. Bank Health Telemetry — Global benchmarks readable by authenticated merchants,
+    // merchant-scoped telemetry updates isolated.
+    match /bank_health/{bankId} {
+      allow read: if isAuthenticated() && (!('merchantId' in resource.data) || resource.data.merchantId == null || resource.data.merchantId == request.auth.uid);
+      allow create, update: if isAuthenticated() && (!('merchantId' in request.resource.data) || request.resource.data.merchantId == request.auth.uid);
+      allow delete: if isDocumentMerchant();
+    }
+
+    // 7. Merchant Policies Collection — scoped by merchantId
+    match /merchant_policies/{policyId} {
+      allow read, update, delete: if isDocumentMerchant();
+      allow create: if isIncomingMerchant();
+    }
+
+    // 8. Audit Logs Collection — Append-only & strictly merchant-isolated
+    match /audit_logs/{logId} {
+      allow read: if isDocumentMerchant();
+      allow create: if isIncomingMerchant();
+      allow update, delete: if false; // Immutable audit trail
     }
   }
 }

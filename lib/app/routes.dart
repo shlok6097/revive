@@ -1,48 +1,90 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../features/auth/login/login_screen.dart';
+import '../features/auth/signup/signup_screen.dart';
+import '../features/dashboard/dashboard_screen.dart';
+import '../services/auth_service.dart';
 
-/// Central routing definitions for the Revive application.
+/// Central routing configuration and route-guarding for the Revive application.
 class AppRoutes {
   AppRoutes._();
 
-  static const String initial = dashboard;
-
-  static const String auth = '/auth';
+  static const String root = '/';
+  static const String login = '/login';
+  static const String signup = '/signup';
   static const String dashboard = '/dashboard';
   static const String transactions = '/transactions';
   static const String recovery = '/recovery';
   static const String simulator = '/simulator';
   static const String settings = '/settings';
 
-  /// Map of route names to their placeholder builder widgets.
-  /// Feature screens will replace these placeholders in subsequent phases.
+  /// Application named routes map.
   static final Map<String, WidgetBuilder> routes = {
-    auth: (context) => const _RoutePlaceholder(title: 'Auth'),
-    dashboard: (context) => const _RoutePlaceholder(title: 'Dashboard'),
-    transactions: (context) => const _RoutePlaceholder(title: 'Transactions'),
-    recovery: (context) => const _RoutePlaceholder(title: 'Recovery'),
-    simulator: (context) => const _RoutePlaceholder(title: 'Simulator'),
-    settings: (context) => const _RoutePlaceholder(title: 'Settings'),
+    root: (context) => const AuthGate(),
+    login: (context) => const LoginScreen(),
+    signup: (context) => const SignupScreen(),
+    dashboard: (context) => const DashboardScreen(initialRoute: dashboard),
+    transactions: (context) => const DashboardScreen(initialRoute: transactions),
+    recovery: (context) => const DashboardScreen(initialRoute: recovery),
+    simulator: (context) => const DashboardScreen(initialRoute: simulator),
+    settings: (context) => const DashboardScreen(initialRoute: settings),
   };
 }
 
-/// Minimal placeholder screen used strictly for routing scaffolding in Phase 1.
-class _RoutePlaceholder extends StatelessWidget {
-  const _RoutePlaceholder({required this.title});
+/// Authentication gate widget ensuring protected merchant access.
+///
+/// If an active Firebase session exists, routes directly to [DashboardScreen].
+/// Otherwise, presents the [LoginScreen].
+class AuthGate extends StatelessWidget {
+  const AuthGate({
+    super.key,
+    this.authService,
+  });
 
-  final String title;
+  final AuthService? authService;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title),
-      ),
-      body: Center(
-        child: Text(
-          'Revive $title Placeholder',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-      ),
+    final service = authService ?? AuthService();
+
+    return StreamBuilder<User?>(
+      stream: service.authStateChanges,
+      builder: (context, snapshot) {
+        // While Firebase is restoring cached session tokens
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: Color(0xFFF8FAFC),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(
+                    color: Color(0xFF2563EB),
+                    strokeWidth: 3,
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Initializing Revive Session...',
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // If authenticated, grant access to Dashboard
+        if (snapshot.hasData && snapshot.data != null) {
+          return const DashboardScreen();
+        }
+
+        // Otherwise, enforce merchant sign-in
+        return const LoginScreen();
+      },
     );
   }
 }
