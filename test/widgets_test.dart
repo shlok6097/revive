@@ -10,6 +10,7 @@ import 'package:revive/repositories/merchant_repository.dart';
 import 'package:revive/services/auth_service.dart';
 import 'package:revive/widgets/dashboard_sidebar.dart';
 import 'package:revive/widgets/metric_card.dart';
+import 'package:revive/widgets/razorpay_connection_card.dart';
 import 'package:revive/widgets/status_badge.dart';
 
 class MockAuthService extends AuthService {
@@ -182,6 +183,59 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Merchant Sign In'), findsOneWidget);
+    });
+
+    testWidgets('RazorpayConnectionCard renders disconnected state and opens modal', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RazorpayConnectionCard(
+              merchant: Merchant(
+                id: 'uid_test',
+                name: 'Test Merchant',
+                email: 'test@merchant.com',
+                razorpayConnected: false,
+                createdAt: DateTime.now(),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('PAYMENT GATEWAY'), findsOneWidget);
+      expect(find.text('Not Connected'), findsOneWidget);
+      expect(find.text('Connect Razorpay'), findsOneWidget);
+
+      await tester.tap(find.text('Connect Razorpay'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Connect Razorpay Gateway'), findsOneWidget);
+      expect(find.textContaining('Zero Secret Exposure'), findsOneWidget);
+      expect(find.text('Verify & Connect'), findsOneWidget);
+    });
+
+    testWidgets('RazorpayConnectionCard renders connected state with account info', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RazorpayConnectionCard(
+              merchant: Merchant(
+                id: 'uid_test',
+                name: 'Test Merchant',
+                email: 'test@merchant.com',
+                razorpayConnected: true,
+                razorpayAccountId: 'acc_rzp_live_9988',
+                razorpayConnectedAt: DateTime(2026, 9, 3),
+                createdAt: DateTime(2026, 9, 1),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Connected ✓'), findsOneWidget);
+      expect(find.text('acc_rzp_live_9988'), findsOneWidget);
+      expect(find.text('Disconnect'), findsOneWidget);
     });
   });
 }

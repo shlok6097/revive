@@ -3,8 +3,10 @@ import '../../models/merchant.dart';
 import '../../models/transaction.dart';
 import '../../repositories/merchant_repository.dart';
 import '../../services/auth_service.dart';
+import '../../widgets/ai_intelligence_card.dart';
 import '../../widgets/dashboard_sidebar.dart';
 import '../../widgets/metric_card.dart';
+import '../../widgets/razorpay_connection_card.dart';
 import '../../widgets/status_badge.dart';
 import 'mock_dashboard_data.dart';
 
@@ -221,6 +223,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                             ),
                           ],
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  if (tx.errorCode != null || tx.status == 'FAILED' || tx.status == 'RECOVERED') ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'AI FAILURE INTELLIGENCE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFAF5FF),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE9D5FF)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildDetailRow(
+                            'Failure Category',
+                            tx.errorCode == 'GATEWAY_TIMEOUT' ? 'NETWORK_ERROR' : 'BANK_DECLINE',
+                            valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF7E22CE)),
+                          ),
+                          const Divider(height: 16),
+                          _buildDetailRow(
+                            'Recommended Strategy',
+                            tx.errorCode == 'GATEWAY_TIMEOUT' ? 'RETRY' : 'ALTERNATIVE_METHOD',
+                            valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                          ),
+                          const Divider(height: 16),
+                          _buildDetailRow(
+                            'Policy Status',
+                            'REQUIRES_REVIEW',
+                            valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
+                          ),
+                          const Divider(height: 16),
+                          _buildDetailRow('Model Attribution', 'Phi-3 Mini (v1.0)'),
+                          const Divider(height: 16),
+                          _buildDetailRow('Prompt Version', 'revive-payment-classifier-v1'),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFE9D5FF)),
+                            ),
+                            child: const Text(
+                              'AI Recommendation — Human/Policy Validation Required (No recovery executed)',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF6B21A8), fontWeight: FontWeight.w600),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -548,11 +611,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
               );
             },
           ),
-          const SizedBox(height: 28.0),
+          const SizedBox(height: 24.0),
+
+          // Payment Gateway Connection Status Card
+          RazorpayConnectionCard(
+            merchant: _merchant,
+            onConnectionChanged: _loadMerchantProfile,
+          ),
+          const SizedBox(height: 24.0),
 
           // Bank Health Telemetry Strip
           _buildBankHealthStrip(),
-          const SizedBox(height: 28.0),
+          const SizedBox(height: 24.0),
+
+          // AI Failure Intelligence Overview Card
+          AIIntelligenceCard(
+            latestTransaction: _filteredTransactions.firstWhere(
+              (t) => t.status == 'FAILED' || t.status == 'RECOVERED',
+              orElse: () => _filteredTransactions.first,
+            ),
+            merchantId: _merchant?.id,
+          ),
+          const SizedBox(height: 24.0),
 
           // Recent Transactions Table Card
           _buildTransactionsCard(),

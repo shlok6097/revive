@@ -18,6 +18,8 @@ void main() {
         name: 'Acme Payments',
         email: 'merchant@acme.com',
         razorpayAccountId: 'acc_rzp_9900',
+        razorpayConnected: true,
+        razorpayConnectedAt: now,
         autonomyMode: 'SEMI_AUTONOMOUS',
         createdAt: now,
       );
@@ -26,6 +28,8 @@ void main() {
       expect(map['name'], 'Acme Payments');
       expect(map['email'], 'merchant@acme.com');
       expect(map['razorpayAccountId'], 'acc_rzp_9900');
+      expect(map['razorpayConnected'], true);
+      expect(map['razorpayConnectedAt'], isA<Timestamp>());
       expect(map['autonomyMode'], 'SEMI_AUTONOMOUS');
       expect(map['createdAt'], isA<Timestamp>());
 
@@ -34,6 +38,7 @@ void main() {
       expect(reconstructed.name, merchant.name);
       expect(reconstructed.email, merchant.email);
       expect(reconstructed.razorpayAccountId, merchant.razorpayAccountId);
+      expect(reconstructed.razorpayConnected, true);
       expect(reconstructed.autonomyMode, merchant.autonomyMode);
     });
 
@@ -119,18 +124,25 @@ void main() {
         id: 'ai_001',
         merchantId: 'usr_auth_uid_123',
         transactionId: 'tx_rv_7711',
-        decision: 'RETRY_VIA_SECONDARY_GATEWAY',
+        failureCategory: 'BANK_DECLINE',
+        recommendedStrategy: 'RETRY',
         confidence: 0.94,
-        reason: 'HDFC gateway benchmark demonstrates 99.2% success rate',
+        reasoning: 'HDFC gateway benchmark demonstrates 99.2% success rate',
+        policyStatus: 'REQUIRES_REVIEW',
         createdAt: now,
       );
 
       final map = decision.toFirestore();
       expect(map['confidence'], 0.94);
-      expect(map['decision'], 'RETRY_VIA_SECONDARY_GATEWAY');
+      expect(map['failureCategory'], 'BANK_DECLINE');
+      expect(map['recommendedStrategy'], 'RETRY');
+      expect(map['policyStatus'], 'REQUIRES_REVIEW');
 
       final reconstructed = AIDecision.fromMap(map, 'ai_001');
       expect(reconstructed.confidence, 0.94);
+      expect(reconstructed.failureCategory, 'BANK_DECLINE');
+      expect(reconstructed.recommendedStrategy, 'RETRY');
+      expect(reconstructed.policyStatus, 'REQUIRES_REVIEW');
     });
 
     test('BankHealth serialization', () {

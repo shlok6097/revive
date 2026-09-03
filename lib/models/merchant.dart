@@ -9,6 +9,8 @@ class Merchant {
     required this.name,
     required this.email,
     this.razorpayAccountId,
+    this.razorpayConnected = false,
+    this.razorpayConnectedAt,
     this.autonomyMode = 'SEMI_AUTONOMOUS',
     required this.createdAt,
   });
@@ -24,6 +26,12 @@ class Merchant {
 
   /// Optional connected Razorpay Account ID (e.g. 'acc_xxxxxxxxxxxxxx').
   final String? razorpayAccountId;
+
+  /// Whether Razorpay is connected and active for this merchant.
+  final bool razorpayConnected;
+
+  /// Timestamp when Razorpay was connected.
+  final DateTime? razorpayConnectedAt;
 
   /// Current REVIVE recovery autonomy policy ('MANUAL', 'SEMI_AUTONOMOUS', 'FULL_AUTONOMOUS').
   final String autonomyMode;
@@ -44,6 +52,8 @@ class Merchant {
       name: data['name'] as String? ?? '',
       email: data['email'] as String? ?? '',
       razorpayAccountId: data['razorpayAccountId'] as String?,
+      razorpayConnected: data['razorpayConnected'] as bool? ?? false,
+      razorpayConnectedAt: (data['razorpayConnectedAt'] as Timestamp?)?.toDate(),
       autonomyMode: data['autonomyMode'] as String? ?? 'SEMI_AUTONOMOUS',
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -55,6 +65,9 @@ class Merchant {
       'name': name,
       'email': email,
       'razorpayAccountId': razorpayAccountId,
+      'razorpayConnected': razorpayConnected,
+      if (razorpayConnectedAt != null)
+        'razorpayConnectedAt': Timestamp.fromDate(razorpayConnectedAt!),
       'autonomyMode': autonomyMode,
       'createdAt': Timestamp.fromDate(createdAt),
     };
@@ -66,6 +79,8 @@ class Merchant {
     String? name,
     String? email,
     String? razorpayAccountId,
+    bool? razorpayConnected,
+    DateTime? razorpayConnectedAt,
     String? autonomyMode,
     DateTime? createdAt,
   }) {
@@ -74,6 +89,8 @@ class Merchant {
       name: name ?? this.name,
       email: email ?? this.email,
       razorpayAccountId: razorpayAccountId ?? this.razorpayAccountId,
+      razorpayConnected: razorpayConnected ?? this.razorpayConnected,
+      razorpayConnectedAt: razorpayConnectedAt ?? this.razorpayConnectedAt,
       autonomyMode: autonomyMode ?? this.autonomyMode,
       createdAt: createdAt ?? this.createdAt,
     );
