@@ -13,12 +13,14 @@ class CustomerRecoveryScreen extends StatefulWidget {
     this.token,
     this.client,
     this.mockValidation,
+    this.simulated = false,
   });
 
   final String? sessionId;
   final String? token;
   final RecoverySessionClient? client;
   final CustomerRecoveryValidation? mockValidation;
+  final bool simulated;
 
   @override
   State<CustomerRecoveryScreen> createState() => _CustomerRecoveryScreenState();
@@ -59,10 +61,11 @@ class _CustomerRecoveryScreenState extends State<CustomerRecoveryScreen> {
         sessionId: sId,
         token: tok,
       );
+
       if (mounted) {
         setState(() {
           _validation = res;
-          _selectedMethod = res.paymentMethod.isNotEmpty ? res.paymentMethod : 'UPI';
+          _selectedMethod = res.paymentMethod;
           _isLoading = false;
         });
       }
@@ -71,7 +74,7 @@ class _CustomerRecoveryScreenState extends State<CustomerRecoveryScreen> {
         setState(() {
           _validation = const CustomerRecoveryValidation(
             valid: false,
-            error: 'Failed to connect to recovery service.',
+            error: 'Unable to connect to recovery services.',
           );
           _isLoading = false;
         });
@@ -104,6 +107,38 @@ class _CustomerRecoveryScreenState extends State<CustomerRecoveryScreen> {
     } catch (_) {
       if (mounted) {
         setState(() => _isProcessingPayment = false);
+      }
+    }
+  }
+
+  Future<void> _handleSimulatedPaymentSuccess() async {
+    final sId = widget.sessionId ?? _validation?.sessionId ?? 'ses_sim_123';
+    final txId = _validation?.transactionId ?? 'tx_sim_123';
+
+    setState(() => _isProcessingPayment = true);
+
+    try {
+      final res = await _client.simulateCustomerPaymentSuccess(
+        sessionId: sId,
+        transactionId: txId,
+      );
+
+      if (mounted) {
+        setState(() {
+          _isProcessingPayment = false;
+          if (res['success'] == true) {
+            _isPaymentSuccess = true;
+            _paymentReference = 'PAY_SIM_${DateTime.now().millisecondsSinceEpoch}';
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isProcessingPayment = false;
+          _isPaymentSuccess = true;
+          _paymentReference = 'PAY_SIM_${DateTime.now().millisecondsSinceEpoch}';
+        });
       }
     }
   }
@@ -343,6 +378,50 @@ class _CustomerRecoveryScreenState extends State<CustomerRecoveryScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     child: const Text('Use Another Method', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+
+                // Demo Simulation Action (Phase 9)
+                if (widget.simulated || v.simulated) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: const [
+                            Icon(Icons.science_outlined, size: 16, color: Color(0xFFB45309)),
+                            SizedBox(width: 6),
+                            Text(
+                              'DEMO SIMULATION MODE',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFB45309), letterSpacing: 0.6),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _isProcessingPayment ? null : _handleSimulatedPaymentSuccess,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFD97706),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                            icon: const Icon(Icons.bolt_rounded, size: 16),
+                            label: const Text('Simulate Successful Payment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
 

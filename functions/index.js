@@ -9,6 +9,7 @@ const admin = require("firebase-admin");
 const { RazorpayService } = require("./services/razorpay_service");
 const { BackendRecoveryExecutor } = require("./services/recovery_executor");
 const { RecoverySessionService } = require("./services/recovery_session_service");
+const { SimulatorService } = require("./services/simulator_service");
 
 // Initialize Firebase Admin SDK if not already initialized
 if (!admin.apps.length) {
@@ -22,6 +23,7 @@ const db = admin.firestore();
 const razorpayService = new RazorpayService();
 const recoveryExecutor = new BackendRecoveryExecutor({ firestore: db, razorpayService });
 const recoverySessionService = new RecoverySessionService({ firestore: db });
+const simulatorService = new SimulatorService({ firestore: db });
 
 /**
  * Callable Function: Connect Razorpay
@@ -406,5 +408,67 @@ exports.startRecoveryPayment = onCall(async (request) => {
   } catch (error) {
     console.error("Error starting recovery payment:", error);
     throw new HttpsError("internal", error.message || "Failed to start recovery payment.");
+  }
+});
+
+/**
+ * Callable Function: Run Payment Simulation (Phase 9)
+ *
+ * Generates a deterministic simulated failed transaction and telemetry.
+ */
+exports.runPaymentSimulation = onCall(async (request) => {
+  if (!request.auth || !request.auth.uid) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Authentication required to run payment simulation."
+    );
+  }
+
+  const merchantId = request.auth.uid;
+  const scenarioId = request.data?.scenarioId || "BANK_DECLINE";
+  const customAmount = request.data?.amount;
+
+  try {
+    const result = await simulatorService.runPaymentSimulation({
+      merchantId,
+      scenarioId,
+      customAmount,
+    });
+
+    return result;
+  } catch (error) {
+    console.error("Error in runPaymentSimulation:", error);
+    throw new HttpsError("internal", error.message || "Failed to run simulation.");
+  }
+});
+
+/**
+ * Callable Function: Simulate Customer Payment Success (Phase 9 Demo)
+ *
+ * Reconciles customer payment completion for simulated transactions.
+ * SECURITY INVARIANT:
+ * Rejects non-simulated live transactions.
+ */
+exports.simulateCustomerPaymentSuccess = onCall(async (request) => {
+  const sessionId = request.data?.sessionId;
+  const transactionId = request.data?.transactionId;
+
+  if (!sessionId || !transactionId) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Both 'sessionId' and 'transactionId' are required."
+    );
+  }
+
+  try {
+    const result = await simulatorService.simulateCustomerPaymentSuccess({
+      sessionId,
+      transactionId,
+    });
+
+    return result;
+  } catch (error) {
+    console.error("Error in simulateCustomerPaymentSuccess:", error);
+    throw new HttpsError("internal", error.message || "Failed to reconcile simulated payment.");
   }
 });

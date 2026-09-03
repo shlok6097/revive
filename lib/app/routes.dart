@@ -4,6 +4,7 @@ import '../features/auth/login/login_screen.dart';
 import '../features/auth/signup/signup_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/recovery/customer_recovery_screen.dart';
+import '../features/simulator/recovery_simulator_screen.dart';
 import '../services/auth_service.dart';
 
 /// Central routing configuration and route-guarding for the Revive application.
@@ -28,7 +29,7 @@ class AppRoutes {
     dashboard: (context) => const DashboardScreen(initialRoute: dashboard),
     transactions: (context) => const DashboardScreen(initialRoute: transactions),
     recovery: (context) => const DashboardScreen(initialRoute: recovery),
-    simulator: (context) => const DashboardScreen(initialRoute: simulator),
+    simulator: (context) => const RecoverySimulatorScreen(),
     settings: (context) => const DashboardScreen(initialRoute: settings),
     recover: (context) => const CustomerRecoveryScreen(),
   };

@@ -50,6 +50,7 @@ class RecoveryDecision {
 
   bool get isApproved => status == 'APPROVED' || status == 'SIMULATED';
   bool get isBlocked => status == 'BLOCKED';
+  bool get isAllowed => policyStatus == 'ALLOWED';
 
   Map<String, dynamic> toMap() {
     return {

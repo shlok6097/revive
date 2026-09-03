@@ -18,6 +18,7 @@ class CustomerRecoveryValidation {
     this.message = 'We could not complete your payment. Please try again.',
     this.actionPrompt = 'Try Payment Again',
     this.allowAlternate = true,
+    this.simulated = false,
     this.expiresAt,
     this.error,
   });
@@ -35,6 +36,7 @@ class CustomerRecoveryValidation {
   final String message;
   final String actionPrompt;
   final bool allowAlternate;
+  final bool simulated;
   final DateTime? expiresAt;
   final String? error;
 
@@ -53,6 +55,7 @@ class CustomerRecoveryValidation {
       message: map['message'] as String? ?? 'We could not complete your payment. Please try again.',
       actionPrompt: map['actionPrompt'] as String? ?? 'Try Payment Again',
       allowAlternate: map['allowAlternate'] as bool? ?? true,
+      simulated: map['simulated'] as bool? ?? false,
       expiresAt: map['expiresAt'] != null ? DateTime.tryParse(map['expiresAt'].toString()) : null,
       error: map['error'] as String?,
     );
@@ -246,6 +249,39 @@ class RecoverySessionClient {
       'status': 'RECOVERED',
       'paymentId': 'pay_rec_${now.millisecondsSinceEpoch}',
       'message': 'Payment recovered successfully.',
+    };
+  }
+
+  /// Triggers simulated payment reconciliation for demo sessions.
+  Future<Map<String, dynamic>> simulateCustomerPaymentSuccess({
+    required String sessionId,
+    required String transactionId,
+  }) async {
+    final now = DateTime.now();
+
+    try {
+      await _db.collection('transactions').doc(transactionId).set({
+        'status': 'SUCCESS',
+        'recoveryOutcome': 'RECOVERED',
+        'recoveredAt': Timestamp.fromDate(now),
+        'recoverySessionId': sessionId,
+        'updatedAt': Timestamp.fromDate(now),
+      }, SetOptions(merge: true));
+
+      await _db.collection('recovery_sessions').doc(sessionId).set({
+        'status': 'USED',
+        'usedAt': Timestamp.fromDate(now),
+        'updatedAt': Timestamp.fromDate(now),
+      }, SetOptions(merge: true));
+    } catch (_) {}
+
+    return {
+      'success': true,
+      'status': 'RECOVERED',
+      'transactionId': transactionId,
+      'sessionId': sessionId,
+      'simulated': true,
+      'message': 'Simulated recovery completed successfully.',
     };
   }
 

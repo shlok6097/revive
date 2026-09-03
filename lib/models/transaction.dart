@@ -3,8 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Represents a payment transaction processed or monitored by Revive.
 ///
 /// Retains granular, structured failure taxonomy ([errorCode], [errorReason],
-/// [errorSource], [errorStep]) and Phase 8 recovery outcome metadata ([recoveryOutcome],
-/// [recoveredAt], [recoverySessionId]).
+/// [errorSource], [errorStep]), Phase 8 recovery outcome metadata ([recoveryOutcome],
+/// [recoveredAt], [recoverySessionId]), and [simulated] flag for demo safety.
 class TransactionModel {
   const TransactionModel({
     required this.id,
@@ -22,6 +22,7 @@ class TransactionModel {
     this.recoveryOutcome,
     this.recoveredAt,
     this.recoverySessionId,
+    this.simulated = false,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -71,6 +72,9 @@ class TransactionModel {
   /// ID of the recovery session that facilitated recovery.
   final String? recoverySessionId;
 
+  /// Whether this transaction is a simulated demo transaction.
+  final bool simulated;
+
   /// Creation timestamp.
   final DateTime createdAt;
 
@@ -103,6 +107,7 @@ class TransactionModel {
       recoveryOutcome: data['recoveryOutcome'] as String?,
       recoveredAt: (data['recoveredAt'] as Timestamp?)?.toDate(),
       recoverySessionId: data['recoverySessionId'] as String?,
+      simulated: data['simulated'] as bool? ?? false,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -125,6 +130,7 @@ class TransactionModel {
       'recoveryOutcome': recoveryOutcome,
       'recoveredAt': recoveredAt != null ? Timestamp.fromDate(recoveredAt!) : null,
       'recoverySessionId': recoverySessionId,
+      'simulated': simulated,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
@@ -147,6 +153,7 @@ class TransactionModel {
     String? recoveryOutcome,
     DateTime? recoveredAt,
     String? recoverySessionId,
+    bool? simulated,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -166,6 +173,7 @@ class TransactionModel {
       recoveryOutcome: recoveryOutcome ?? this.recoveryOutcome,
       recoveredAt: recoveredAt ?? this.recoveredAt,
       recoverySessionId: recoverySessionId ?? this.recoverySessionId,
+      simulated: simulated ?? this.simulated,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

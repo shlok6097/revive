@@ -10,6 +10,7 @@ import '../../widgets/razorpay_connection_card.dart';
 import '../../widgets/recovery_strategy_card.dart';
 import '../../widgets/status_badge.dart';
 import '../recovery/customer_recovery_screen.dart';
+import '../simulator/recovery_simulator_screen.dart';
 import '../../services/recovery_session_client.dart';
 import 'mock_dashboard_data.dart';
 
@@ -525,7 +526,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Expanded(
                   child: _currentRoute == '/dashboard'
                       ? _buildDashboardBody()
-                      : _buildSectionPlaceholder(_currentRoute),
+                      : _currentRoute == '/simulator'
+                          ? RecoverySimulatorScreen(merchant: _merchant)
+                          : _buildSectionPlaceholder(_currentRoute),
                 ),
               ],
             ),
@@ -881,9 +884,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (context) => const CustomerRecoveryScreen(
-                        sessionId: 'ses_demo_123',
-                        token: 'tok_demo_secure_hash',
+                      builder: (context) => RecoverySimulatorScreen(
+                        merchant: _merchant,
                       ),
                     ),
                   );
@@ -895,8 +897,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                 ),
-                icon: const Icon(Icons.open_in_new_rounded, size: 14),
-                label: const Text('Simulate Recovery Link', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.play_circle_outline_rounded, size: 14),
+                label: const Text('Open Simulator', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
               ),
             ],
           ),

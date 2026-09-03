@@ -240,6 +240,18 @@ class LocalLLMService implements AIService {
     final code = (tx.errorCode ?? '').toLowerCase();
     final source = (tx.errorSource ?? '').toLowerCase();
 
+    if (reason.contains('fraud') || code.contains('fraud') || code.contains('risk') || source.contains('risk')) {
+      return AIDecisionResult(
+        failureCategory: FailureCategory.fraudRisk.value,
+        recommendedStrategy: RecommendedStrategy.noAction.value,
+        modelName: modelName,
+        modelVersion: modelVersion,
+        promptVersion: promptVersion,
+        reasoning: 'Heuristic classification: Fraud or risk safety filter triggered.',
+        isFallback: true,
+      );
+    }
+
     if (reason.contains('insufficient') || code.contains('insufficient') || reason.contains('low balance')) {
       return AIDecisionResult(
         failureCategory: FailureCategory.insufficientFunds.value,
