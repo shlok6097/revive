@@ -359,7 +359,7 @@ void main() {
       expect(find.text('AI Recommendation'), findsOneWidget);
       expect(find.text('Policy Decision'), findsOneWidget);
       expect(find.text('Retry Attempts'), findsOneWidget);
-      expect(find.text('Simulate Strategy'), findsOneWidget);
+      expect(find.text('Simulate Recovery'), findsOneWidget);
       expect(find.text('RECOVERY LIFECYCLE PROGRESS'), findsOneWidget);
       expect(find.text('Payment Failed'), findsOneWidget);
       expect(find.text('AI Analysis'), findsOneWidget);

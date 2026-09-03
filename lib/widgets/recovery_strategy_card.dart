@@ -3,12 +3,15 @@ import '../models/ai_decision.dart';
 import '../models/merchant_policy.dart';
 import '../models/recovery_attempt.dart';
 import '../models/recovery_decision.dart';
+import '../models/recovery_execution_result.dart';
 import '../models/transaction.dart';
 import '../repositories/merchant_policy_repository.dart';
+import '../services/recovery_executor.dart';
 import '../services/recovery_strategy_service.dart';
 
 /// Fintech card displaying deterministic recovery strategy evaluation,
-/// attempt counters, policy decisions, and a visual recovery progress timeline.
+/// attempt counters, policy decisions, visual recovery progress timeline,
+/// and interactive simulation / live recovery execution triggers with confirmation dialogs.
 class RecoveryStrategyCard extends StatefulWidget {
   const RecoveryStrategyCard({
     super.key,
@@ -18,6 +21,7 @@ class RecoveryStrategyCard extends StatefulWidget {
     this.previousAttempts = const [],
     this.merchantId,
     this.strategyService,
+    this.executor,
   });
 
   final TransactionModel? latestTransaction;
@@ -26,6 +30,7 @@ class RecoveryStrategyCard extends StatefulWidget {
   final List<RecoveryAttempt> previousAttempts;
   final String? merchantId;
   final RecoveryStrategyService? strategyService;
+  final RecoveryExecutor? executor;
 
   @override
   State<RecoveryStrategyCard> createState() => _RecoveryStrategyCardState();
@@ -34,7 +39,8 @@ class RecoveryStrategyCard extends StatefulWidget {
 class _RecoveryStrategyCardState extends State<RecoveryStrategyCard> {
   RecoveryDecision? _decision;
   RecoveryAttempt? _simulatedAttempt;
-  bool _isSimulating = false;
+  RecoveryExecutionResult? _executionResult;
+  bool _isExecuting = false;
 
   @override
   void initState() {
@@ -69,46 +75,171 @@ class _RecoveryStrategyCardState extends State<RecoveryStrategyCard> {
     setState(() => _decision = dec);
   }
 
-  Future<void> _runSimulation() async {
+  Future<void> _executeRecoveryAction({required bool simulation, bool confirmed = false}) async {
     final tx = widget.latestTransaction;
     if (tx == null) return;
 
-    setState(() => _isSimulating = true);
+    setState(() => _isExecuting = true);
     try {
-      final service = widget.strategyService ?? RecoveryStrategyService();
-      final attempt = await service.createRecoveryDecision(
-        transactionId: tx.id,
+      final exec = widget.executor ?? FirebaseRecoveryExecutor();
+      final attemptId = _simulatedAttempt?.id ?? 'rec_${tx.id}_1';
+
+      final res = await exec.executeRecovery(
         merchantId: widget.merchantId ?? 'merchant_current',
+        transactionId: tx.id,
+        recoveryAttemptId: attemptId,
+        simulation: simulation,
+        confirmed: confirmed,
         transaction: tx,
-        aiDecision: widget.aiDecision,
-        policy: widget.merchantPolicy,
+        recoveryAttempt: _simulatedAttempt,
+        merchantPolicy: widget.merchantPolicy,
         previousAttempts: widget.previousAttempts,
       );
+
       if (mounted) {
         setState(() {
-          _simulatedAttempt = attempt;
+          _executionResult = res;
           _evaluate();
         });
       }
-    } catch (_) {
-      // Handled gracefully in simulation UI
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _executionResult = RecoveryExecutionResult(
+            success: false,
+            status: 'FAILED',
+            message: e.toString(),
+            simulated: simulation,
+            executedAt: DateTime.now(),
+          );
+        });
+      }
     } finally {
-      if (mounted) setState(() => _isSimulating = false);
+      if (mounted) setState(() => _isExecuting = false);
     }
+  }
+
+  void _showConfirmationDialog({required bool isLive}) {
+    final tx = widget.latestTransaction;
+    final strategy = _decision?.strategy ?? 'RETRY';
+    final amountStr = tx != null ? '₹${tx.amount.toStringAsFixed(2)}' : '₹0.00';
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(
+                isLive ? Icons.warning_amber_rounded : Icons.play_circle_outline_rounded,
+                color: isLive ? const Color(0xFFD97706) : const Color(0xFF2563EB),
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isLive ? 'Confirm Live Recovery' : 'Run Recovery Simulation',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isLive
+                      ? 'You are about to initiate a real recovery request through the governed execution pipeline.'
+                      : 'This safe simulation tests the complete decision lifecycle without calling payment gateway APIs.',
+                  style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildDialogRow('Target Transaction', amountStr),
+                      const Divider(height: 12),
+                      _buildDialogRow('Decided Strategy', strategy),
+                      const Divider(height: 12),
+                      _buildDialogRow('Execution Mode', isLive ? 'LIVE RECOVERY' : 'SIMULATION ONLY'),
+                      const Divider(height: 12),
+                      _buildDialogRow(
+                        'Gateway Action',
+                        isLive ? 'Live Razorpay API' : 'Zero Live Calls (Simulated)',
+                        valueColor: isLive ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _executeRecoveryAction(simulation: !isLive, confirmed: true);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isLive ? const Color(0xFFDC2626) : const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              child: Text(isLive ? 'Confirm Live Recovery' : 'Execute Simulation'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDialogRow(String label, String value, {Color? valueColor}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: valueColor ?? const Color(0xFF0F172A)),
+          ),
+        ),
+      ],
+    );
   }
 
   Color _getStatusColor(String status) {
     switch (status.toUpperCase()) {
       case 'APPROVED':
       case 'SIMULATED':
+      case 'SIMULATED_SUCCESS':
       case 'COMPLETED':
+      case 'SUCCESS':
         return const Color(0xFF16A34A);
       case 'BLOCKED':
       case 'FAILED':
+      case 'SIMULATED_FAILURE':
         return const Color(0xFFDC2626);
       case 'PLANNED':
+      case 'EXECUTING':
         return const Color(0xFF2563EB);
       case 'REQUIRES_REVIEW':
+      case 'REQUIRES_CONFIRMATION':
+      case 'DUPLICATE':
       default:
         return const Color(0xFFD97706);
     }
@@ -118,14 +249,20 @@ class _RecoveryStrategyCardState extends State<RecoveryStrategyCard> {
     switch (status.toUpperCase()) {
       case 'APPROVED':
       case 'SIMULATED':
+      case 'SIMULATED_SUCCESS':
       case 'COMPLETED':
+      case 'SUCCESS':
         return const Color(0xFFF0FDF4);
       case 'BLOCKED':
       case 'FAILED':
+      case 'SIMULATED_FAILURE':
         return const Color(0xFFFEF2F2);
       case 'PLANNED':
+      case 'EXECUTING':
         return const Color(0xFFEFF6FF);
       case 'REQUIRES_REVIEW':
+      case 'REQUIRES_CONFIRMATION':
+      case 'DUPLICATE':
       default:
         return const Color(0xFFFFFBEB);
     }
@@ -137,10 +274,11 @@ class _RecoveryStrategyCardState extends State<RecoveryStrategyCard> {
     final aiRecommendation = widget.aiDecision?.recommendedStrategy ?? 'RETRY';
     final policyStatus = _decision?.policyStatus ?? 'ALLOWED';
     final strategy = _decision?.strategy ?? 'RETRY';
-    final status = _simulatedAttempt?.status ?? _decision?.status ?? 'APPROVED';
+    final status = _executionResult?.status ?? _simulatedAttempt?.status ?? _decision?.status ?? 'APPROVED';
     final maxRetries = widget.merchantPolicy?.maxAutomaticRetries ?? 1;
     final currentAttempt = widget.previousAttempts.length;
     final autonomyMode = widget.merchantPolicy?.autonomyMode ?? 'MANUAL';
+    final isBlocked = _decision?.isBlocked ?? false;
 
     final statusColor = _getStatusColor(status);
     final statusBg = _getStatusBg(status);
@@ -253,7 +391,7 @@ class _RecoveryStrategyCardState extends State<RecoveryStrategyCard> {
           ),
           const SizedBox(height: 18),
 
-          // Diagnostic Grid
+          // Diagnostic Metrics Grid
           LayoutBuilder(
             builder: (context, constraints) {
               final isWide = constraints.maxWidth > 600;
@@ -277,65 +415,117 @@ class _RecoveryStrategyCardState extends State<RecoveryStrategyCard> {
           _buildRecoveryTimeline(),
           const SizedBox(height: 16),
 
-          // Decision Reason & Simulation Banner
+          // Decision Reason & Simulation Execution Actions
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.shield_outlined, size: 16, color: Color(0xFF2563EB)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _decision?.reason ?? 'Deterministic recovery strategy: $strategy approved for simulated execution.',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF334155),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.shield_outlined, size: 16, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _decision?.reason ?? 'Governed recovery strategy: $strategy ready for execution.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: _isSimulating ? null : _runSimulation,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  ),
-                  icon: _isSimulating
-                      ? const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.play_arrow_rounded, size: 16),
-                  label: const Text('Simulate Strategy', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+
+                // Execution Action Buttons
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: isBlocked || _isExecuting
+                          ? null
+                          : () => _showConfirmationDialog(isLive: false),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      icon: _isExecuting
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.play_circle_outline_rounded, size: 16),
+                      label: const Text('Simulate Recovery', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                    if (!isBlocked && (autonomyMode == 'ASSISTED' || autonomyMode == 'MANUAL'))
+                      OutlinedButton.icon(
+                        onPressed: _isExecuting
+                            ? null
+                            : () => _showConfirmationDialog(isLive: true),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF1E293B),
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                        icon: const Icon(Icons.check_circle_outline_rounded, size: 16, color: Color(0xFF15803D)),
+                        label: const Text('Confirm Recovery', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 10),
 
-          // Safety Invariant Callout
-          Row(
-            children: const [
-              Icon(Icons.info_outline, size: 13, color: Color(0xFF94A3B8)),
-              SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Phase 6 Simulation Mode: Strategy calculated deterministically. Zero real payment actions executed.',
-                  style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
+          // Simulation Result Banner
+          if (_executionResult != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _executionResult!.success ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _executionResult!.success ? const Color(0xFFBBF7D0) : const Color(0xFFFECACA),
                 ),
               ),
-            ],
-          ),
+              child: Row(
+                children: [
+                  Icon(
+                    _executionResult!.success ? Icons.task_alt_rounded : Icons.error_outline_rounded,
+                    size: 16,
+                    color: _executionResult!.success ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _executionResult!.simulated
+                          ? 'SIMULATION COMPLETE: ${_executionResult!.message} Actual Razorpay payment: NOT EXECUTED.'
+                          : _executionResult!.message,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: _executionResult!.success ? const Color(0xFF15803D) : const Color(0xFF991B1B),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -395,7 +585,13 @@ class _RecoveryStrategyCardState extends State<RecoveryStrategyCard> {
                 _buildTimelineArrow(),
                 _buildTimelineStep(title: 'Strategy Selected', isCompleted: true),
                 _buildTimelineArrow(),
-                _buildTimelineStep(title: 'Real Recovery', isCompleted: false, isDeferred: true),
+                _buildTimelineStep(
+                  title: _executionResult != null
+                      ? (_executionResult!.simulated ? 'Simulated Recovery' : 'Live Recovery')
+                      : 'Real Recovery',
+                  isCompleted: _executionResult != null,
+                  isDeferred: _executionResult == null,
+                ),
               ],
             ),
           ),

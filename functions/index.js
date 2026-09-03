@@ -7,6 +7,7 @@ const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https")
 const { setGlobalOptions } = require("firebase-functions/v2");
 const admin = require("firebase-admin");
 const { RazorpayService } = require("./services/razorpay_service");
+const { BackendRecoveryExecutor } = require("./services/recovery_executor");
 
 // Initialize Firebase Admin SDK if not already initialized
 if (!admin.apps.length) {
@@ -18,6 +19,7 @@ setGlobalOptions({ maxInstances: 10 });
 
 const db = admin.firestore();
 const razorpayService = new RazorpayService();
+const recoveryExecutor = new BackendRecoveryExecutor({ firestore: db, razorpayService });
 
 /**
  * Callable Function: Connect Razorpay
@@ -257,3 +259,51 @@ exports.razorpayWebhook = onRequest(async (req, res) => {
     res.status(500).json({ error: "Internal server error processing event" });
   }
 });
+
+/**
+ * Callable Function: Execute Recovery (Phase 7)
+ *
+ * Executes or simulates a governed recovery attempt under strict backend guards.
+ * SECURITY INVARIANTS:
+ * 1. Authentication is enforced via request.auth.uid.
+ * 2. Merchant isolation is validated before execution.
+ * 3. Idempotency guarantees single execution.
+ * 4. Razorpay credentials never leave backend functions.
+ */
+exports.executeRecovery = onCall(async (request) => {
+  if (!request.auth || !request.auth.uid) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Authentication required to execute recovery attempt."
+    );
+  }
+
+  const merchantId = request.auth.uid;
+  const transactionId = request.data?.transactionId;
+  const recoveryAttemptId = request.data?.recoveryAttemptId;
+  const simulation = request.data?.simulation !== false; // default true for safety
+  const confirmed = request.data?.confirmed === true;
+
+  if (!transactionId || !recoveryAttemptId) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Both 'transactionId' and 'recoveryAttemptId' are required."
+    );
+  }
+
+  try {
+    const result = await recoveryExecutor.executeRecovery({
+      merchantId,
+      transactionId,
+      recoveryAttemptId,
+      simulation,
+      confirmed,
+    });
+
+    return result;
+  } catch (error) {
+    console.error("Error in executeRecovery:", error);
+    throw new HttpsError("internal", error.message || "Failed to execute recovery.");
+  }
+});
+

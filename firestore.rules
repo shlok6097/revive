@@ -84,5 +84,10 @@ service cloud.firestore {
     match /processed_events/{eventId} {
       allow read, write: if false; // Admin/Backend only
     }
+
+    // 10. Processed Recovery Executions (Idempotency Tracking) — Backend administered
+    match /processed_recoveries/{executionId} {
+      allow read, write: if false; // Admin/Backend only
+    }
   }
 }
