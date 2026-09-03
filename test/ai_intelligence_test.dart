@@ -165,7 +165,6 @@ void main() {
     });
 
     test('Test 9 — AIDecision model serialization and Firestore invariants', () {
-      final now = DateTime.now();
       final decision = AIDecision(
         id: 'dec_tx_123',
         merchantId: 'merchant_99',

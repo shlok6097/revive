@@ -7,6 +7,7 @@ import '../../widgets/ai_intelligence_card.dart';
 import '../../widgets/dashboard_sidebar.dart';
 import '../../widgets/metric_card.dart';
 import '../../widgets/razorpay_connection_card.dart';
+import '../../widgets/recovery_strategy_card.dart';
 import '../../widgets/status_badge.dart';
 import 'mock_dashboard_data.dart';
 
@@ -282,6 +283,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             child: const Text(
                               'AI Recommendation — Human/Policy Validation Required (No recovery executed)',
                               style: TextStyle(fontSize: 11, color: Color(0xFF6B21A8), fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  if (tx.errorCode != null || tx.status == 'FAILED' || tx.status == 'RECOVERED') ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'RECOVERY STRATEGY (GOVERNED DECISION)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildDetailRow(
+                            'Policy Decision',
+                            'APPROVED',
+                            valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                          ),
+                          const Divider(height: 16),
+                          _buildDetailRow(
+                            'Strategy',
+                            tx.errorCode == 'GATEWAY_TIMEOUT' ? 'RETRY' : 'ALTERNATIVE_METHOD',
+                            valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                          ),
+                          const Divider(height: 16),
+                          _buildDetailRow('Attempts', '0 / 1'),
+                          const Divider(height: 16),
+                          _buildDetailRow('Mode', 'SIMULATION'),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFBBF7D0)),
+                            ),
+                            child: const Text(
+                              'No real payment action has been executed (Phase 6 Simulation Mode).',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF15803D), fontWeight: FontWeight.w600),
                             ),
                           ),
                         ],
@@ -626,6 +682,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           // AI Failure Intelligence Overview Card
           AIIntelligenceCard(
+            latestTransaction: _filteredTransactions.firstWhere(
+              (t) => t.status == 'FAILED' || t.status == 'RECOVERED',
+              orElse: () => _filteredTransactions.first,
+            ),
+            merchantId: _merchant?.id,
+          ),
+          const SizedBox(height: 24.0),
+
+          // Recovery Strategy Engine & Simulation Card
+          RecoveryStrategyCard(
             latestTransaction: _filteredTransactions.firstWhere(
               (t) => t.status == 'FAILED' || t.status == 'RECOVERED',
               orElse: () => _filteredTransactions.first,

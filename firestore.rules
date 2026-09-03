@@ -66,8 +66,9 @@ service cloud.firestore {
       allow delete: if isDocumentMerchant();
     }
 
-    // 7. Merchant Policies Collection — scoped by merchantId
+    // 7. Merchant Policies Collection — scoped by merchantId or owner UID
     match /merchant_policies/{policyId} {
+      allow read, write: if isOwner(policyId);
       allow read, update, delete: if isDocumentMerchant();
       allow create: if isIncomingMerchant();
     }

@@ -102,20 +102,21 @@ void main() {
         id: 'rec_001',
         merchantId: 'usr_auth_uid_123',
         transactionId: 'tx_rv_7711',
-        strategy: 'DYNAMIC_FALLBACK_UPI',
-        status: 'INITIATED',
+        strategy: 'ALTERNATIVE_METHOD',
+        status: 'PLANNED',
         reason: 'Fallback to UPI intent due to Netbanking timeout',
         createdAt: now,
         updatedAt: now,
       );
 
       final map = attempt.toFirestore();
-      expect(map['strategy'], 'DYNAMIC_FALLBACK_UPI');
-      expect(map['status'], 'INITIATED');
+      expect(map['strategy'], 'ALTERNATIVE_METHOD');
+      expect(map['status'], 'PLANNED');
 
       final reconstructed = RecoveryAttempt.fromMap(map, 'rec_001');
       expect(reconstructed.transactionId, 'tx_rv_7711');
-      expect(reconstructed.strategy, 'DYNAMIC_FALLBACK_UPI');
+      expect(reconstructed.strategy, 'ALTERNATIVE_METHOD');
+      expect(reconstructed.status, 'PLANNED');
     });
 
     test('AIDecision serialization', () {
@@ -170,19 +171,20 @@ void main() {
       final policy = MerchantPolicy(
         id: 'pol_001',
         merchantId: 'usr_auth_uid_123',
-        autonomyMode: 'FULL_AUTONOMOUS',
-        maxRecoveryAttempts: 4,
-        allowedStrategies: ['SMART_ROUTING_RETRY', 'DYNAMIC_FALLBACK_UPI'],
+        autonomyMode: 'AUTONOMOUS',
+        maxAutomaticRetries: 4,
+        allowedStrategies: ['RETRY', 'ALTERNATIVE_METHOD'],
         createdAt: now,
         updatedAt: now,
       );
 
       final map = policy.toFirestore();
-      expect(map['maxRecoveryAttempts'], 4);
+      expect(map['maxAutomaticRetries'], 4);
       expect(map['allowedStrategies'], hasLength(2));
 
       final reconstructed = MerchantPolicy.fromMap(map, 'pol_001');
-      expect(reconstructed.autonomyMode, 'FULL_AUTONOMOUS');
+      expect(reconstructed.autonomyMode, 'AUTONOMOUS');
+      expect(reconstructed.maxAutomaticRetries, 4);
     });
 
     test('AuditLog serialization', () {

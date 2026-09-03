@@ -60,7 +60,7 @@ class AIDecision {
     this.promptVersion = 'revive-payment-classifier-v1',
     this.reasoning,
     this.policyStatus = 'REQUIRES_REVIEW',
-    required this.createdAt,
+    this.createdAt,
   });
 
   /// Unique AI decision identifier in `ai_decisions/{decisionId}`.
@@ -75,35 +75,38 @@ class AIDecision {
   /// Standardized failure classification category.
   final String failureCategory;
 
-  /// Recommended non-executing strategy suggestion.
+  /// Suggested recovery action ('RETRY', 'ALTERNATIVE_METHOD', 'WAIT_AND_RETRY', 'NO_ACTION', 'ESCALATE').
   final String recommendedStrategy;
 
-  /// Optional confidence rating (null by default in Phase 5).
+  /// Optional model confidence score (nullable; not fabricated in Phase 5/6).
   final double? confidence;
 
-  /// Model identifier that produced this classification.
+  /// Name of the model backing the inference.
   final String modelName;
 
-  /// Model release/weights version.
+  /// Semantic version of the model.
   final String modelVersion;
 
-  /// Versioned classification prompt identifier.
+  /// Version identifier for the system/prompt template.
   final String promptVersion;
 
-  /// Contextual reasoning text.
+  /// Diagnostic reasoning or rule explanation.
   final String? reasoning;
 
-  /// Deterministic policy status: 'ALLOWED', 'BLOCKED', 'REQUIRES_REVIEW'.
+  /// Evaluated policy status ('ALLOWED', 'BLOCKED', 'REQUIRES_REVIEW').
   final String policyStatus;
 
-  /// Decision timestamp.
-  final DateTime createdAt;
+  /// Timestamp when inference completed.
+  final DateTime? createdAt;
 
-  /// Backward-compatibility alias for decision string.
+  /// Compatibility getter for Phase 2 API.
+  String get category => failureCategory;
+
+  /// Compatibility getter for Phase 2 API.
   String get decision => recommendedStrategy;
 
-  /// Backward-compatibility alias for reason string.
-  String get reason => reasoning ?? '';
+  /// Compatibility getter for Phase 2 API.
+  String? get reason => reasoning;
 
   /// Creates an [AIDecision] from Firestore document snapshot.
   factory AIDecision.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -128,7 +131,7 @@ class AIDecision {
       promptVersion: data['promptVersion'] as String? ?? 'revive-payment-classifier-v1',
       reasoning: data['reasoning'] as String? ?? data['reason'] as String?,
       policyStatus: data['policyStatus'] as String? ?? 'REQUIRES_REVIEW',
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -145,7 +148,7 @@ class AIDecision {
       'promptVersion': promptVersion,
       'reasoning': reasoning,
       'policyStatus': policyStatus,
-      'createdAt': Timestamp.fromDate(createdAt),
+      'createdAt': Timestamp.fromDate(createdAt ?? DateTime.now()),
     };
   }
 
