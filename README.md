@@ -30,6 +30,13 @@ REVIVE bridges the gap between payment failure telemetry and successful settleme
 AI Recommends (Advisory) ➔ Policy Engine Decides (Enforced) ➔ Backend Executes (Governed) ➔ Razorpay Webhook Reconciles (Authoritative)
 ```
 
+### Technology Stack
+* **Frontend**: Flutter Web (Dart 3.x, Responsive Material 3 Fintech UI)
+* **Backend**: Firebase Cloud Functions (Node.js 18/20, Express, HMAC-SHA256)
+* **Data & Auth**: Cloud Firestore & Firebase Authentication (Merchant UID Scoped)
+* **Payment Gateway**: Razorpay REST API & Webhooks
+* **AI Engine**: `Local Phi-3 Mini (buildathon) → specialized payment-failure model (production direction)`
+
 ---
 
 ## 2. System Architecture
@@ -197,7 +204,140 @@ Sampling: temperature = 0.0 (Deterministic)
 
 ---
 
-## 6. Deterministic Policy Layer
+## 6. AI Model Architecture & Continuous Learning
+
+### Current AI Model
+* REVIVE currently runs **Phi-3 Mini locally** through an OpenAI-compatible local inference server.
+* The Flutter application communicates with the local model through the existing `AIService` / `LocalLLMService` abstraction layer.
+* The current development endpoint is:
+  ```text
+  http://127.0.0.1:8080/v1/chat/completions
+  ```
+* The model is strictly utilized for **payment-failure classification and recovery recommendations**.
+* The AI receives sanitized, structured payment telemetry:
+  * `paymentMethod` (UPI, Card, Netbanking)
+  * `bank` (HDFC, ICICI, SBI, AXIS, etc.)
+  * `amount` (Numeric value in INR)
+  * `errorCode` (Razorpay normalized code)
+  * `errorReason` (Gateway error message)
+  * `errorSource` (bank, gateway, customer)
+  * `errorStep` (payment_authorization, authentication, etc.)
+* **Privacy & Security Guard**: Never send Razorpay secrets, authentication tokens, API keys, or customer PII to the model.
+
+### AI Decision Pipeline
+
+```text
+Razorpay Webhook
+       ↓
+Transaction Telemetry
+       ↓
+Payment Failure Classification
+       ↓
+Local Phi-3 Mini
+       ↓
+AI Recommendation
+       ↓
+Deterministic Recovery Policy Engine
+       ↓
+Governed Recovery Decision
+       ↓
+Recovery Execution
+       ↓
+Actual Payment Outcome
+```
+
+**The AI is advisory only.** The AI model must **NEVER** directly execute a payment recovery.
+
+The deterministic policy engine remains the final authority and applies:
+* Fraud-risk blocking
+* Retry limits & exponential backoff rules
+* Merchant policy configurations
+* Autonomy mode enforcement (`MANUAL`, `ASSISTED`, `AUTONOMOUS`)
+* Operator manual confirmation requirements
+* Recovery session eligibility rules
+
+---
+
+### Specialized Payment-Failure Model — Production Direction
+
+> *The buildathon prototype uses Phi-3 Mini as the local inference model. The production architecture is model-agnostic and is designed to support a specialized payment-failure model trained on historical transaction telemetry and recovery outcomes.*
+
+Rather than relying on unguided dynamic weight changes during live transactions, REVIVE employs a controlled, periodic feedback loop:
+
+```text
+Historical Transactions
+        ↓
+Failure / Recovery Dataset
+        ↓
+Model Training / Fine-tuning
+        ↓
+Payment-Failure Model
+        ↓
+Live Transaction Classification
+        ↓
+Recovery Outcome
+        ↓
+New Training Data
+        ↓
+Periodic Model Retraining
+```
+
+Every transaction contributes verified **feedback and outcome data** (reconciled by webhooks) to the historical dataset, while model updates happen through a controlled, benchmarked training/fine-tuning pipeline rather than automatically changing model weights after every transaction.
+
+---
+
+### Model Improvement Loop
+The continuous improvement loop ingests structured training signals:
+* Failure category & sub-category
+* Razorpay granular error taxonomy (`errorCode`, `errorReason`, `errorSource`, `errorStep`)
+* Issuing bank & network health telemetry
+* Payment method & instrument characteristics
+* Transaction size & velocity profiles
+* AI recommendation vs. Deterministic Policy verdict
+* Executed recovery strategy (`RETRY`, `WAIT_AND_RETRY`, `ALTERNATIVE_METHOD`)
+* Final payment outcome (`RECOVERED` vs. `TERMINAL_FAILURE`)
+* Time-to-recovery duration
+* Multi-attempt retry success/failure ratios
+
+This comprehensive feedback enables the model to improve failure classification accuracy and precision in recovery strategy recommendations over time.
+
+---
+
+### Model Replacement Architecture
+The AI layer is intentionally decoupled via clean interfaces:
+
+```text
+AIService
+   │
+   ├── LocalLLMService
+   │       └── Phi-3 Mini        ← Current buildathon model
+   │
+   └── PaymentFailureModel
+           └── Specialized model ← Production direction
+```
+
+Because the application interacts with `AIService`, the rest of REVIVE does not depend directly on a specific LLM. The underlying model can be swapped with a specialized fine-tuned model or dedicated inference endpoint without modifying the recovery strategy engine, Firestore data layer, Razorpay webhook pipeline, or merchant dashboard.
+
+---
+
+### Safety & Governance
+
+> **AI proposes. Policy decides. Backend executes.**
+
+REVIVE adheres to 9 strict safety invariants:
+1. **Zero Secret Exposure**: AI never receives Razorpay secret credentials or private keys.
+2. **No Direct Execution**: AI never directly initiates or executes payment charges.
+3. **Deterministic Validation**: AI recommendations are unconditionally validated by deterministic policy rules.
+4. **Fraud Risk Quarantine**: Fraud-risk scenarios are permanently blocked from automated recovery.
+5. **Merchant Autonomy Control**: Merchant configuration dictates whether actions require manual, assisted, or autonomous dispatch.
+6. **Backend Execution**: Recovery execution occurs exclusively through authenticated backend functions.
+7. **Authoritative Webhooks**: Razorpay webhooks remain the sole source of truth for payment status.
+8. **Anonymized Data**: Model training uses strictly authorized, anonymized, and de-identified transaction records.
+9. **Deliberate Deployment**: Production model updates are versioned, regression-tested against benchmarks, and deployed deliberately.
+
+---
+
+## 7. Deterministic Policy Layer
 
 The `RecoveryPolicyService` serves as the authoritative safety gateway between AI suggestions and execution.
 
@@ -214,7 +354,7 @@ AI Classification ──> [ Deterministic Policy Engine ] ──> Outcome: ALLOW
 
 ---
 
-## 7. Recovery Strategy Engine
+## 8. Recovery Strategy Engine
 
 The strategy engine evaluates the transaction context, AI diagnostic, policy verdict, and previous attempts to determine the exact recovery plan.
 
@@ -225,7 +365,7 @@ The strategy engine evaluates the transaction context, AI diagnostic, policy ver
 
 ---
 
-## 8. Recovery Execution Layer & Simulator Safety
+## 9. Recovery Execution Layer & Simulator Safety
 
 * **Execution Guards**: Validates merchant ownership, non-terminal attempt status, and strategy permissions before execution.
 * **Idempotency**: Attempt IDs are checked against `processed_recoveries` to prevent duplicate billing.
@@ -236,7 +376,7 @@ The strategy engine evaluates the transaction context, AI diagnostic, policy ver
 
 ---
 
-## 9. Customer Recovery Layer (Smart Recovery Links)
+## 10. Customer Recovery Layer (Smart Recovery Links)
 
 When automated retry is unavailable (e.g. insufficient funds, card expired, auth decline), REVIVE generates single-use **Customer Recovery Sessions**:
 
@@ -251,7 +391,7 @@ Failed Payment ➔ Create Session ➔ Generate SHA-256 Token ➔ Secure Link (/r
 
 ---
 
-## 10. Recovery Simulator & Demo Engine
+## 11. Recovery Simulator & Demo Engine
 
 REVIVE includes an end-to-end **Payment Failure Simulator** to test and demonstrate all 10 phases without relying on live bank outages.
 
@@ -266,7 +406,7 @@ REVIVE includes an end-to-end **Payment Failure Simulator** to test and demonstr
 
 ---
 
-## 11. Analytics & Recovery Intelligence
+## 12. Analytics & Recovery Intelligence
 
 The analytics engine deterministically calculates real-time performance indicators without relying on LLM arithmetic:
 
@@ -283,7 +423,7 @@ The analytics engine deterministically calculates real-time performance indicato
 
 ---
 
-## 12. Security Architecture
+## 13. Security Architecture
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
@@ -302,7 +442,7 @@ The analytics engine deterministically calculates real-time performance indicato
 
 ---
 
-## 13. Complete End-to-End Recovery Sequence
+## 14. Complete End-to-End Recovery Sequence
 
 ```mermaid
 sequenceDiagram
@@ -348,7 +488,7 @@ sequenceDiagram
 
 ---
 
-## 14. Project Structure
+## 15. Project Structure
 
 ```text
 revive/
@@ -425,7 +565,7 @@ revive/
 
 ---
 
-## 15. Local Development Setup
+## 16. Local Development Setup
 
 ### Prerequisites
 * Flutter SDK (3.24.0 or later)
@@ -461,7 +601,7 @@ flutter run -d chrome
 
 ---
 
-## 16. Cloud Functions & Backend Verification
+## 17. Cloud Functions & Backend Verification
 
 Run the comprehensive backend test suite:
 ```bash
@@ -471,7 +611,7 @@ npm test
 
 ---
 
-## 17. Automated Verification Results (Phase 10)
+## 18. Automated Verification Results (Phase 10)
 
 ```text
 ============================================================
@@ -487,7 +627,7 @@ npm test
 
 ---
 
-## 18. AI Testing & Diagnostics
+## 19. AI Testing & Diagnostics
 
 The local AI failure classifier receives normalized telemetry and responds with strictly typed JSON.
 
@@ -521,7 +661,7 @@ The local AI failure classifier receives normalized telemetry and responds with 
 
 ---
 
-## 19. Core Design Principles
+## 20. Core Design Principles
 
 1. **AI is Advisory**: Machine learning provides failure diagnosis; it never holds payment execution authority.
 2. **Deterministic Policy Rules**: Risky, fraudulent, or malformed transactions are stopped by hard-coded safety logic.
@@ -536,7 +676,7 @@ The local AI failure classifier receives normalized telemetry and responds with 
 
 ---
 
-## 20. Buildathon Pitch: Why REVIVE?
+## 21.Why REVIVE?
 
 Payment failures in digital commerce are treated as binary dead-ends. When a transaction fails, merchants lose hard-won revenue, and customers face frustrating checkout interruptions.
 
