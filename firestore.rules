@@ -1,0 +1,23 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // -------------------------------------------------------------------------
+    // Phase 1 Foundation Security Rules (Revive)
+    // -------------------------------------------------------------------------
+    // CONSERVATIVE DEVELOPMENT CONFIGURATION:
+    // Requires standard user authentication for read and write operations.
+    //
+    // PRODUCTION SECURITY WARNING / REQUIRED HARDENING:
+    // 1. Document-level authorization: Restrict users to accessing/modifying
+    //    only their own user profile data (e.g. /users/{userId}/...).
+    // 2. Collection-specific validations: Enforce schema and field integrity
+    //    for transactions, recovery records, and simulation configurations.
+    // 3. Prevent arbitrary writes by untrusted or unverified accounts.
+    // -------------------------------------------------------------------------
+
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
