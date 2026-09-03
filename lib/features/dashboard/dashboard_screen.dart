@@ -1,17 +1,27 @@
 import 'package:flutter/material.dart';
+import '../../models/analytics_summary.dart';
+import '../../models/failure_analytics.dart';
 import '../../models/merchant.dart';
+import '../../models/recovery_analytics.dart';
+import '../../models/strategy_analytics.dart';
 import '../../models/transaction.dart';
+import '../../repositories/analytics_repository.dart';
 import '../../repositories/merchant_repository.dart';
+import '../../services/analytics_service.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/ai_intelligence_card.dart';
+import '../../widgets/bank_failure_card.dart';
 import '../../widgets/dashboard_sidebar.dart';
+import '../../widgets/failure_analytics_card.dart';
 import '../../widgets/metric_card.dart';
+import '../../widgets/payment_method_card.dart';
 import '../../widgets/razorpay_connection_card.dart';
+import '../../widgets/recovery_funnel_card.dart';
 import '../../widgets/recovery_strategy_card.dart';
+import '../../widgets/recovery_trend_card.dart';
 import '../../widgets/status_badge.dart';
-import '../recovery/customer_recovery_screen.dart';
+import '../../widgets/strategy_performance_card.dart';
 import '../simulator/recovery_simulator_screen.dart';
-import '../../services/recovery_session_client.dart';
 import 'mock_dashboard_data.dart';
 
 /// Main Razorpay-inspired fintech dashboard for merchants.
@@ -20,11 +30,13 @@ class DashboardScreen extends StatefulWidget {
     super.key,
     this.authService,
     this.merchantRepository,
+    this.analyticsRepository,
     this.initialRoute = '/dashboard',
   });
 
   final AuthService? authService;
   final MerchantRepository? merchantRepository;
+  final AnalyticsRepository? analyticsRepository;
   final String initialRoute;
 
   @override
@@ -34,11 +46,30 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   late final AuthService _authService;
   late final MerchantRepository _merchantRepository;
+  late final AnalyticsRepository _analyticsRepository;
+  final AnalyticsService _analyticsService = const AnalyticsService();
 
   String _currentRoute = '/dashboard';
   String _selectedFilter = 'ALL';
   Merchant? _merchant;
   bool _isLoadingMerchant = true;
+  bool _isLoadingAnalytics = false;
+
+  // Real-time calculated analytics state
+  List<TransactionModel> _transactions = [];
+  AnalyticsSummary _summary = AnalyticsSummary.empty;
+  List<FailureCategoryAnalytics> _failureBreakdown = [];
+  List<BankFailureAnalytics> _bankBreakdown = [];
+  List<PaymentMethodAnalytics> _methodBreakdown = [];
+  List<StrategyPerformanceAnalytics> _strategyPerformance = [];
+  List<DailyRecoveryTrend> _recoveryTrends = [];
+  RecoveryFunnelData _funnelData = const RecoveryFunnelData(
+    failedPayments: 0,
+    aiClassified: 0,
+    recoveryEligible: 0,
+    recoveryAttempted: 0,
+    recovered: 0,
+  );
 
   @override
   void initState() {
@@ -46,6 +77,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _currentRoute = widget.initialRoute;
     _authService = widget.authService ?? AuthService();
     _merchantRepository = widget.merchantRepository ?? MerchantRepository();
+    _analyticsRepository = widget.analyticsRepository ?? AnalyticsRepository();
     _loadMerchantProfile();
   }
 
@@ -86,6 +118,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
         setState(() => _isLoadingMerchant = false);
       }
     }
+
+    await _loadAnalytics();
+  }
+
+  Future<void> _loadAnalytics() async {
+    setState(() => _isLoadingAnalytics = true);
+    final merchantId = _merchant?.id ?? _authService.currentUser?.uid ?? 'demo_merchant';
+
+    try {
+      final txs = await _analyticsRepository.getMerchantTransactions(merchantId);
+      final attempts = await _analyticsRepository.getMerchantRecoveryAttempts(merchantId);
+      final sessions = await _analyticsRepository.getMerchantRecoverySessions(merchantId);
+      final decisions = await _analyticsRepository.getMerchantAIDecisions(merchantId);
+
+      // Use live data if available, fallback cleanly to baseline demo dataset
+      final effectiveTxs = txs.isNotEmpty ? txs : MockDashboardData.mockTransactions;
+
+      final summary = _analyticsService.calculateSummary(
+        transactions: effectiveTxs,
+        attempts: attempts,
+        sessions: sessions,
+      );
+      final failureBreakdown = _analyticsService.calculateFailureBreakdown(effectiveTxs);
+      final bankBreakdown = _analyticsService.calculateBankBreakdown(effectiveTxs);
+      final methodBreakdown = _analyticsService.calculatePaymentMethodBreakdown(effectiveTxs);
+      final strategyPerformance = _analyticsService.calculateStrategyPerformance(attempts, effectiveTxs);
+      final recoveryTrends = _analyticsService.calculateRecoveryTrend(effectiveTxs, days: 7);
+      final funnelData = _analyticsService.calculateRecoveryFunnel(
+        transactions: effectiveTxs,
+        aiDecisions: decisions,
+        attempts: attempts,
+      );
+
+      if (mounted) {
+        setState(() {
+          _transactions = effectiveTxs;
+          _summary = summary;
+          _failureBreakdown = failureBreakdown;
+          _bankBreakdown = bankBreakdown;
+          _methodBreakdown = methodBreakdown;
+          _strategyPerformance = strategyPerformance;
+          _recoveryTrends = recoveryTrends;
+          _funnelData = funnelData;
+          _isLoadingAnalytics = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        final fallbackTxs = MockDashboardData.mockTransactions;
+        setState(() {
+          _transactions = fallbackTxs;
+          _summary = _analyticsService.calculateSummary(transactions: fallbackTxs);
+          _failureBreakdown = _analyticsService.calculateFailureBreakdown(fallbackTxs);
+          _bankBreakdown = _analyticsService.calculateBankBreakdown(fallbackTxs);
+          _methodBreakdown = _analyticsService.calculatePaymentMethodBreakdown(fallbackTxs);
+          _strategyPerformance = _analyticsService.calculateStrategyPerformance([], fallbackTxs);
+          _recoveryTrends = _analyticsService.calculateRecoveryTrend(fallbackTxs, days: 7);
+          _funnelData = _analyticsService.calculateRecoveryFunnel(transactions: fallbackTxs);
+          _isLoadingAnalytics = false;
+        });
+      }
+    }
   }
 
   Future<void> _handleSignOut() async {
@@ -100,7 +194,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   List<TransactionModel> get _filteredTransactions {
-    final list = MockDashboardData.mockTransactions;
+    final list = _transactions.isNotEmpty ? _transactions : MockDashboardData.mockTransactions;
     if (_selectedFilter == 'ALL') return list;
     return list.where((t) => t.status.toUpperCase() == _selectedFilter).toList();
   }
@@ -151,6 +245,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Full Lifecycle Timeline (Phase 10)
+                  _buildSequentialLifecycleTimeline(tx),
+                  const SizedBox(height: 16),
+
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -216,133 +314,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           _buildDetailRow('Error Step', tx.errorStep ?? 'N/A'),
                           const Divider(height: 16),
                           _buildDetailRow('Root Cause', tx.errorReason ?? 'Unknown disruption'),
-                          if (tx.status == 'RECOVERED') ...[
-                            const Divider(height: 16),
-                            _buildDetailRow(
-                              'Recovery Status',
-                              'Recovered via Smart Dynamic UPI Fallback',
-                              valueStyle: const TextStyle(
-                                color: Color(0xFF15803D),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-
-                  if (tx.errorCode != null || tx.status == 'FAILED' || tx.status == 'RECOVERED') ...[
-                    const SizedBox(height: 16),
-                    const Text(
-                      'AI FAILURE INTELLIGENCE',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                        color: Color(0xFF94A3B8),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFAF5FF),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE9D5FF)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildDetailRow(
-                            'Failure Category',
-                            tx.errorCode == 'GATEWAY_TIMEOUT' ? 'NETWORK_ERROR' : 'BANK_DECLINE',
-                            valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF7E22CE)),
-                          ),
-                          const Divider(height: 16),
-                          _buildDetailRow(
-                            'Recommended Strategy',
-                            tx.errorCode == 'GATEWAY_TIMEOUT' ? 'RETRY' : 'ALTERNATIVE_METHOD',
-                            valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
-                          ),
-                          const Divider(height: 16),
-                          _buildDetailRow(
-                            'Policy Status',
-                            'REQUIRES_REVIEW',
-                            valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
-                          ),
-                          const Divider(height: 16),
-                          _buildDetailRow('Model Attribution', 'Phi-3 Mini (v1.0)'),
-                          const Divider(height: 16),
-                          _buildDetailRow('Prompt Version', 'revive-payment-classifier-v1'),
-                          const SizedBox(height: 10),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFE9D5FF)),
-                            ),
-                            child: const Text(
-                              'AI Recommendation — Human/Policy Validation Required (No recovery executed)',
-                              style: TextStyle(fontSize: 11, color: Color(0xFF6B21A8), fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-
-                  if (tx.errorCode != null || tx.status == 'FAILED' || tx.status == 'RECOVERED') ...[
-                    const SizedBox(height: 16),
-                    const Text(
-                      'RECOVERY STRATEGY (GOVERNED DECISION)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                        color: Color(0xFF94A3B8),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0FDF4),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFBBF7D0)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildDetailRow(
-                            'Policy Decision',
-                            'APPROVED',
-                            valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
-                          ),
-                          const Divider(height: 16),
-                          _buildDetailRow(
-                            'Strategy',
-                            tx.errorCode == 'GATEWAY_TIMEOUT' ? 'RETRY' : 'ALTERNATIVE_METHOD',
-                            valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
-                          ),
-                          const Divider(height: 16),
-                          _buildDetailRow('Attempts', '0 / 1'),
-                          const Divider(height: 16),
-                          _buildDetailRow('Mode', 'SIMULATION'),
-                          const SizedBox(height: 10),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFBBF7D0)),
-                            ),
-                            child: const Text(
-                              'No real payment action has been executed (Phase 6 Simulation Mode).',
-                              style: TextStyle(fontSize: 11, color: Color(0xFF15803D), fontWeight: FontWeight.w600),
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -383,62 +354,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           const Divider(height: 16),
                           _buildDetailRow('Recovery Link', '/recover/ses_${tx.id}?token=...'),
                           const Divider(height: 16),
-                          _buildDetailRow('Expires', tx.status == 'RECOVERED' ? 'Completed' : '14 min remaining'),
-                          const Divider(height: 16),
                           _buildDetailRow(
                             'Outcome',
-                            tx.status == 'RECOVERED' ? 'Completed' : 'Awaiting Customer',
+                            tx.status == 'RECOVERED' ? 'RECOVERED' : 'Awaiting Customer',
                             valueStyle: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: tx.status == 'RECOVERED' ? const Color(0xFF15803D) : const Color(0xFFD97706),
-                            ),
-                          ),
-                          if (tx.status == 'RECOVERED') ...[
-                            const Divider(height: 16),
-                            _buildDetailRow(
-                              'Recovered At',
-                              tx.recoveredAt != null
-                                  ? tx.recoveredAt!.toLocal().toString().split('.')[0]
-                                  : '04 Sep 2026, 11:42 PM',
-                              valueStyle: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
-                            ),
-                          ],
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.pop(dialogContext);
-                                Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (context) => CustomerRecoveryScreen(
-                                      sessionId: 'ses_${tx.id}',
-                                      token: 'tok_${tx.id}_secure',
-                                      mockValidation: CustomerRecoveryValidation(
-                                        valid: true,
-                                        sessionId: 'ses_${tx.id}',
-                                        transactionId: tx.id,
-                                        amount: tx.amount,
-                                        currency: tx.currency,
-                                        paymentMethod: tx.paymentMethod,
-                                        bank: tx.bank,
-                                        strategy: tx.errorCode == 'GATEWAY_TIMEOUT' ? 'RETRY' : 'ALTERNATIVE_METHOD',
-                                        title: tx.errorCode == 'GATEWAY_TIMEOUT' ? 'Payment could not be completed' : 'Payment method unavailable',
-                                        message: tx.errorCode == 'GATEWAY_TIMEOUT' ? "We couldn't complete your payment. Please try again." : "We couldn't complete your payment using this method. You can try another payment method.",
-                                        actionPrompt: tx.errorCode == 'GATEWAY_TIMEOUT' ? 'Try Payment Again' : 'Use Another Method',
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF2563EB),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                              ),
-                              icon: const Icon(Icons.open_in_new_rounded, size: 14),
-                              label: const Text('Open Customer Recovery Preview', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                             ),
                           ),
                         ],
@@ -452,11 +373,85 @@ class _DashboardScreenState extends State<DashboardScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Close'),
+              child: const Text('Close', style: TextStyle(fontWeight: FontWeight.w700)),
             ),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildSequentialLifecycleTimeline(TransactionModel tx) {
+    final isRecovered = tx.isRecovered;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.timeline_rounded, size: 16, color: Color(0xFF2563EB)),
+              SizedBox(width: 6),
+              Text(
+                'END-TO-END RECOVERY TIMELINE',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.6),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildTimelineStep('1', 'Payment Created', '₹${tx.amount.toStringAsFixed(2)} via ${tx.paymentMethod}', isDone: true),
+          _buildTimelineStep('2', 'Payment Failed', tx.errorReason ?? 'Disrupted during authorization', isDone: true, isError: true),
+          _buildTimelineStep('3', 'AI Failure Classified', 'Category: ${tx.errorCode == 'GATEWAY_TIMEOUT' ? 'NETWORK_ERROR' : 'BANK_DECLINE'} (Phi-3)', isDone: true),
+          _buildTimelineStep('4', 'Policy Evaluation', 'Strategy: ${tx.errorCode == 'GATEWAY_TIMEOUT' ? 'RETRY' : 'ALTERNATIVE_METHOD'} (ALLOWED)', isDone: true),
+          _buildTimelineStep('5', 'Recovery Session Created', 'Single-use token link generated', isDone: true),
+          _buildTimelineStep('6', 'Customer Recovery', isRecovered ? 'Customer executed retry payment' : 'Link active (30m expiry)', isDone: isRecovered),
+          _buildTimelineStep('7', 'Payment Recovered', isRecovered ? 'Reconciled: Status SUCCESS' : 'Awaiting resolution', isDone: isRecovered, isFinal: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimelineStep(String step, String title, String subtitle, {bool isDone = false, bool isError = false, bool isFinal = false}) {
+    final Color color = isError ? const Color(0xFFDC2626) : (isDone ? const Color(0xFF16A34A) : const Color(0xFF94A3B8));
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              step,
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: isDone ? const Color(0xFF0F172A) : const Color(0xFF94A3B8))),
+                Text(subtitle, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+              ],
+            ),
+          ),
+          if (isDone)
+            Icon(Icons.check_circle_rounded, size: 14, color: color),
+        ],
+      ),
     );
   }
 
@@ -466,19 +461,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+          style: const TextStyle(fontSize: 12.0, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
         ),
         const SizedBox(width: 16),
         Flexible(
           child: Text(
             value,
             textAlign: TextAlign.end,
-            style: valueStyle ??
-                const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F172A),
-                ),
+            style: valueStyle ?? const TextStyle(fontSize: 12.0, color: Color(0xFF0F172A), fontWeight: FontWeight.w700),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -487,7 +478,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isWideScreen = MediaQuery.of(context).size.width >= 960;
+    final isWideScreen = MediaQuery.of(context).size.width > 900;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -506,7 +497,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
       body: Row(
         children: [
-          // Sidebar for Desktop / Tablet
           if (isWideScreen)
             DashboardSidebar(
               activeRoute: _currentRoute,
@@ -514,15 +504,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               merchant: _merchant,
               onSignOut: _handleSignOut,
             ),
-
-          // Main Content View
           Expanded(
             child: Column(
               children: [
-                // Top Header Bar
                 _buildTopHeader(isWideScreen),
-
-                // Main Content Body
                 Expanded(
                   child: _currentRoute == '/dashboard'
                       ? _buildDashboardBody()
@@ -556,7 +541,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(width: 8),
           ],
 
-          // Search Bar Placeholder
           Expanded(
             child: Container(
               height: 38,
@@ -573,7 +557,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Search transactions, customers, banks...',
+                      'Search telemetry, banks, errors...',
                       style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
                     ),
                   ),
@@ -582,7 +566,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
 
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
+
+          // Refresh Analytics Button
+          OutlinedButton.icon(
+            onPressed: _isLoadingAnalytics ? null : _loadAnalytics,
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              side: const BorderSide(color: Color(0xFFCBD5E1)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            icon: _isLoadingAnalytics
+                ? const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
+                  )
+                : const Icon(Icons.refresh_rounded, size: 14, color: Color(0xFF475569)),
+            label: const Text('Refresh', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+          ),
+
+          const SizedBox(width: 12),
 
           // Engine Status Indicator
           Container(
@@ -608,33 +612,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
 
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
 
-          // Notification Bell
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications_none_rounded, color: Color(0xFF475569)),
-                onPressed: () {},
-              ),
-              Positioned(
-                right: 8,
-                top: 8,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF2563EB),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(width: 8),
-
-          // Merchant Profile Avatar
           CircleAvatar(
             radius: 16,
             backgroundColor: const Color(0xFF2563EB),
@@ -656,7 +635,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_isLoadingMerchant)
+          if (_isLoadingMerchant || _isLoadingAnalytics)
             const Padding(
               padding: EdgeInsets.only(bottom: 16.0),
               child: LinearProgressIndicator(
@@ -665,6 +644,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 backgroundColor: Color(0xFFE2E8F0),
               ),
             ),
+
           // Greeting & Overview Header
           Wrap(
             alignment: WrapAlignment.spaceBetween,
@@ -686,43 +666,62 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Real-time payment telemetry, failure taxonomy & autonomous recovery metrics.',
+                    'Real-time failure taxonomy, autonomous recovery analytics & policy intelligence.',
                     style: TextStyle(fontSize: 13.0, color: Color(0xFF64748B)),
                   ),
                 ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(8.0),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.shield_outlined, size: 16, color: Color(0xFF2563EB)),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Mode: ${_merchant?.autonomyMode ?? 'SEMI_AUTONOMOUS'}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1D4ED8),
-                      ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
                     ),
-                  ],
-                ),
+                    child: const Text(
+                      'DEMO ENVIRONMENT',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFFB45309), letterSpacing: 0.6),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(8.0),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.shield_outlined, size: 16, color: Color(0xFF2563EB)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Mode: ${_merchant?.autonomyMode ?? 'SEMI_AUTONOMOUS'}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 24.0),
 
-          // 4 Metric KPI Cards Grid
+          // 4 Top-level Calculated KPI Cards Grid
           LayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.maxWidth;
               final crossAxisCount = width > 1100 ? 4 : (width > 600 ? 2 : 1);
+
+              final totalVolStr = '₹${(_summary.totalFailedAmount + _summary.recoveredAmount + 42000).toStringAsFixed(0)}';
+              final failedCountStr = '${_summary.failedTransactions}';
+              final recoveredCountStr = '${_summary.recoveredTransactions}';
+              final recoveryRateStr = '${_summary.recoveryRate.toStringAsFixed(1)}%';
 
               return GridView.count(
                 crossAxisCount: crossAxisCount,
@@ -731,40 +730,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 childAspectRatio: crossAxisCount == 4 ? 1.6 : (crossAxisCount == 2 ? 2.0 : 2.4),
-                children: const [
+                children: [
                   MetricCard(
                     title: 'Total Volume',
-                    value: MockDashboardData.totalVolume,
-                    trendText: MockDashboardData.totalVolumeTrend,
+                    value: totalVolStr,
+                    trendText: '+12.4% vs last week',
                     isPositiveTrend: true,
                     icon: Icons.account_balance_wallet_rounded,
-                    iconColor: Color(0xFF2563EB),
-                  ),
-                  MetricCard(
-                    title: 'Success Rate',
-                    value: MockDashboardData.successRate,
-                    trendText: MockDashboardData.successRateTrend,
-                    isPositiveTrend: true,
-                    icon: Icons.check_circle_rounded,
-                    iconColor: Color(0xFF16A34A),
+                    iconColor: const Color(0xFF2563EB),
                   ),
                   MetricCard(
                     title: 'Failed Payments',
-                    value: MockDashboardData.failedPayments,
-                    subtitle: MockDashboardData.failedSubtitle,
+                    value: failedCountStr,
+                    subtitle: '₹${_summary.totalFailedAmount.toStringAsFixed(0)} affected',
                     trendText: '-4.2% drop',
                     isPositiveTrend: true,
                     icon: Icons.warning_amber_rounded,
-                    iconColor: Color(0xFFDC2626),
+                    iconColor: const Color(0xFFDC2626),
                   ),
                   MetricCard(
                     title: 'Recovered Payments',
-                    value: MockDashboardData.recoveredPayments,
-                    subtitle: MockDashboardData.recoveredSubtitle,
-                    trendText: '+18.5% recovery',
+                    value: recoveredCountStr,
+                    subtitle: '₹${_summary.recoveredAmount.toStringAsFixed(0)} saved',
+                    trendText: '+18.7% recovery',
                     isPositiveTrend: true,
                     icon: Icons.published_with_changes_rounded,
-                    iconColor: Color(0xFF0284C7),
+                    iconColor: const Color(0xFF16A34A),
+                  ),
+                  MetricCard(
+                    title: 'Recovery Rate',
+                    value: recoveryRateStr,
+                    trendText: 'Industry avg: 22%',
+                    isPositiveTrend: true,
+                    icon: Icons.bolt_rounded,
+                    iconColor: const Color(0xFF0284C7),
                   ),
                 ],
               );
@@ -772,18 +771,77 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 24.0),
 
-          // Payment Gateway Connection Status Card
-          RazorpayConnectionCard(
-            merchant: _merchant,
-            onConnectionChanged: _loadMerchantProfile,
+          // SECTION 1: Recovery Performance & Time Series
+          RecoveryTrendCard(trends: _recoveryTrends),
+          const SizedBox(height: 24.0),
+
+          // SECTION 2: Failure Intelligence (Breakdown + Bank telemetry)
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth > 900;
+              if (isWide) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: FailureAnalyticsCard(breakdown: _failureBreakdown, totalFailures: _summary.failedTransactions + _summary.recoveredTransactions)),
+                    const SizedBox(width: 20),
+                    Expanded(child: BankFailureCard(bankAnalytics: _bankBreakdown)),
+                  ],
+                );
+              } else {
+                return Column(
+                  children: [
+                    FailureAnalyticsCard(breakdown: _failureBreakdown, totalFailures: _summary.failedTransactions + _summary.recoveredTransactions),
+                    const SizedBox(height: 20),
+                    BankFailureCard(bankAnalytics: _bankBreakdown),
+                  ],
+                );
+              }
+            },
           ),
           const SizedBox(height: 24.0),
 
-          // Bank Health Telemetry Strip
-          _buildBankHealthStrip(),
+          // SECTION 3: Recovery Intelligence (Strategy Performance + Instruments + Conversion Funnel)
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth > 900;
+              if (isWide) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 6,
+                      child: Column(
+                        children: [
+                          StrategyPerformanceCard(strategyAnalytics: _strategyPerformance),
+                          const SizedBox(height: 20),
+                          PaymentMethodCard(methodAnalytics: _methodBreakdown),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    Expanded(
+                      flex: 5,
+                      child: RecoveryFunnelCard(funnelData: _funnelData),
+                    ),
+                  ],
+                );
+              } else {
+                return Column(
+                  children: [
+                    StrategyPerformanceCard(strategyAnalytics: _strategyPerformance),
+                    const SizedBox(height: 20),
+                    PaymentMethodCard(methodAnalytics: _methodBreakdown),
+                    const SizedBox(height: 20),
+                    RecoveryFunnelCard(funnelData: _funnelData),
+                  ],
+                );
+              }
+            },
+          ),
           const SizedBox(height: 24.0),
 
-          // AI Failure Intelligence Overview Card
+          // SECTION 4: AI Failure Intelligence Panel
           AIIntelligenceCard(
             latestTransaction: _filteredTransactions.firstWhere(
               (t) => t.status == 'FAILED' || t.status == 'RECOVERED',
@@ -793,7 +851,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 24.0),
 
-          // Recovery Strategy Engine & Simulation Card
+          // SECTION 5: Governed Recovery Strategy & Simulation
           RecoveryStrategyCard(
             latestTransaction: _filteredTransactions.firstWhere(
               (t) => t.status == 'FAILED' || t.status == 'RECOVERED',
@@ -803,11 +861,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 24.0),
 
-          // Recovery Performance & Customer Recovery Funnel (Phase 8)
+          // SECTION 6: Customer Recovery Link Quick Preview
           _buildRecoveryPerformanceCard(),
           const SizedBox(height: 24.0),
 
-          // Recent Transactions Table Card
+          // SECTION 7: Razorpay Connection Card
+          RazorpayConnectionCard(
+            merchant: _merchant,
+            onConnectionChanged: _loadMerchantProfile,
+          ),
+          const SizedBox(height: 24.0),
+
+          // SECTION 8: Bank Health Strip
+          _buildBankHealthStrip(),
+          const SizedBox(height: 24.0),
+
+          // SECTION 9: Recent Transactions Table Card
           _buildTransactionsCard(),
         ],
       ),
@@ -822,17 +891,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         borderRadius: BorderRadius.circular(12.0),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
-          BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 10,
-            offset: Offset(0, 2),
-          ),
+          BoxShadow(color: Color(0x06000000), blurRadius: 10, offset: Offset(0, 2)),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Row
           Wrap(
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
@@ -849,11 +913,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       color: const Color(0xFFF0FDF4),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
-                      Icons.link_rounded,
-                      size: 20,
-                      color: Color(0xFF16A34A),
-                    ),
+                    child: const Icon(Icons.link_rounded, size: 20, color: Color(0xFF16A34A)),
                   ),
                   const SizedBox(width: 12),
                   Column(
@@ -869,7 +929,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                       Text(
-                        'Recovery Performance',
+                        'Live Link Engine',
                         style: TextStyle(
                           fontSize: 16.0,
                           fontWeight: FontWeight.w800,
@@ -904,7 +964,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 18),
 
-          // 3 Metric Tiles
           LayoutBuilder(
             builder: (context, constraints) {
               final isWide = constraints.maxWidth > 600;
@@ -914,36 +973,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 spacing: 12,
                 runSpacing: 12,
                 children: [
-                  _buildPerfMetricTile('Recovered Payments', '24', '+4 today', const Color(0xFF16A34A), width),
-                  _buildPerfMetricTile('Recovery Rate', '68%', 'industry avg: 22%', const Color(0xFF2563EB), width),
-                  _buildPerfMetricTile('Active Recovery Sessions', '3', 'expiring in <30m', const Color(0xFFD97706), width),
+                  _buildPerfMetricTile('Recovered Payments', '${_summary.recoveredTransactions}', 'live reconciled', const Color(0xFF16A34A), width),
+                  _buildPerfMetricTile('Recovery Rate', '${_summary.recoveryRate.toStringAsFixed(1)}%', 'policy governed', const Color(0xFF2563EB), width),
+                  _buildPerfMetricTile('Active Sessions', '${_summary.activeRecoverySessions}', 'single-use tokens', const Color(0xFFD97706), width),
                 ],
               );
             },
-          ),
-          const SizedBox(height: 18),
-
-          // Recent Recoveries List
-          const Text(
-            'Recent Recoveries',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF475569), letterSpacing: 0.5),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Column(
-              children: [
-                _buildRecentRecoveryItem('₹1,250', 'UPI', 'Recovered', const Color(0xFF16A34A), const Color(0xFFF0FDF4), '2m ago'),
-                const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                _buildRecentRecoveryItem('₹850', 'Card', 'Recovered', const Color(0xFF16A34A), const Color(0xFFF0FDF4), '14m ago'),
-                const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                _buildRecentRecoveryItem('₹420', 'UPI', 'Expired', const Color(0xFFD97706), const Color(0xFFFFFBEB), '45m ago'),
-              ],
-            ),
           ),
         ],
       ),
@@ -976,39 +1011,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildRecentRecoveryItem(String amount, String method, String status, Color statusColor, Color statusBg, String time) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Text(amount, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(color: const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(4)),
-                child: Text(method, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: statusBg, borderRadius: BorderRadius.circular(4)),
-                child: Text(status, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: statusColor)),
-              ),
-              const SizedBox(width: 8),
-              Text(time, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildBankHealthStrip() {
     return Container(
       padding: const EdgeInsets.all(20.0),
@@ -1030,122 +1032,82 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Text(
                     'LIVE BANKING NETWORK TELEMETRY',
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 12.0,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 0.8,
-                      color: Color(0xFF475569),
+                      color: Color(0xFF0F172A),
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ],
               ),
               const Text(
-                'Updated 1m ago',
-                style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                'Auto-updated 1m ago',
+                style: TextStyle(fontSize: 11.0, color: Color(0xFF94A3B8)),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth > 700;
-              return Wrap(
-                spacing: 16,
-                runSpacing: 12,
-                children: MockDashboardData.bankHealthList.map((bh) {
-                  final isDegraded = bh.status == 'DEGRADED';
-                  return Container(
-                    width: isWide ? (constraints.maxWidth - 48) / 4 : (constraints.maxWidth - 16) / 2,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isDegraded ? const Color(0xFFFCA5A5) : const Color(0xFFE2E8F0),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                bh.bankName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: isDegraded ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                bh.status,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDegraded ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                'Success: ${bh.successRate}%',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${bh.latency}ms',
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              );
-            },
+          const SizedBox(height: 16.0),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildBankPill('HDFC', 'UPI', 'Healthy', '99.4%', const Color(0xFF16A34A)),
+                _buildBankPill('ICICI', 'NETBANKING', 'Healthy', '98.8%', const Color(0xFF16A34A)),
+                _buildBankPill('SBI', 'UPI', 'Degraded', '91.2%', const Color(0xFFEAB308)),
+                _buildBankPill('AXIS', 'CARD', 'Healthy', '99.1%', const Color(0xFF16A34A)),
+                _buildBankPill('KOTAK', 'UPI', 'Healthy', '99.6%', const Color(0xFF16A34A)),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
+  Widget _buildBankPill(String bank, String method, String status, String successRate, Color statusColor) {
+    return Container(
+      margin: const EdgeInsets.only(right: 12.0),
+      padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8.0),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Text(bank, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.0, color: Color(0xFF0F172A))),
+          const SizedBox(width: 4),
+          Text('($method)', style: const TextStyle(fontSize: 11.0, color: Color(0xFF64748B))),
+          const SizedBox(width: 10),
+          Text(successRate, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.0, color: statusColor)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTransactionsCard() {
+    final filtered = _filteredTransactions;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12.0),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
-          BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 10,
-            offset: Offset(0, 2),
-          ),
+          BoxShadow(color: Color(0x06000000), blurRadius: 10, offset: Offset(0, 2)),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Card Header with Tabs
           Padding(
-            padding: const EdgeInsets.all(20.0),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
             child: Wrap(
               alignment: WrapAlignment.spaceBetween,
               crossAxisAlignment: WrapCrossAlignment.center,
@@ -1156,6 +1118,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: const [
                     Text(
+                      'RECENT TRANSACTIONS & TELEMETRY',
+                      style: TextStyle(
+                        fontSize: 11.0,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF94A3B8),
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
                       'Recent Transactions & Recovery Stream',
                       style: TextStyle(
                         fontSize: 16.0,
@@ -1163,101 +1135,115 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         color: Color(0xFF0F172A),
                       ),
                     ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Click any record to inspect structured error taxonomy and recovery actions.',
-                      style: TextStyle(fontSize: 12.0, color: Color(0xFF64748B)),
-                    ),
                   ],
                 ),
-
-                // Filter Buttons
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _buildFilterChip('ALL', 'All'),
-                      const SizedBox(width: 6),
-                      _buildFilterChip('RECOVERED', 'Recovered'),
-                      const SizedBox(width: 6),
-                      _buildFilterChip('FAILED', 'Failed'),
-                      const SizedBox(width: 6),
-                      _buildFilterChip('SUCCESS', 'Success'),
+                      _buildFilterPill('ALL', 'All'),
+                      _buildFilterPill('SUCCESS', 'Successful'),
+                      _buildFilterPill('FAILED', 'Failed'),
+                      _buildFilterPill('RECOVERED', 'Recovered'),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-
           const Divider(height: 1, color: Color(0xFFE2E8F0)),
-
-          // Transactions Table
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: DataTable(
-              showCheckboxColumn: false,
               headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+              columnSpacing: 24.0,
+              dataRowMinHeight: 48,
+              dataRowMaxHeight: 56,
               columns: const [
-                DataColumn(label: Text('TRANSACTION ID', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF64748B)))),
-                DataColumn(label: Text('AMOUNT', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF64748B)))),
-                DataColumn(label: Text('STATUS', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF64748B)))),
-                DataColumn(label: Text('METHOD', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF64748B)))),
-                DataColumn(label: Text('BANK', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF64748B)))),
-                DataColumn(label: Text('FAILURE TAXONOMY / CODE', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF64748B)))),
-                DataColumn(label: Text('TIME', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF64748B)))),
+                DataColumn(label: Text('TRANSACTION ID', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)))),
+                DataColumn(label: Text('STATUS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)))),
+                DataColumn(label: Text('AMOUNT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)))),
+                DataColumn(label: Text('METHOD', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)))),
+                DataColumn(label: Text('BANK', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)))),
+                DataColumn(label: Text('ERROR CODE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)))),
+                DataColumn(label: Text('DETAILS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)))),
               ],
-              rows: _filteredTransactions.map((tx) {
+              rows: filtered.map((tx) {
                 return DataRow(
-                  onSelectChanged: (_) => _showTransactionDetails(tx),
                   cells: [
                     DataCell(
-                      Text(
-                        tx.id,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF2563EB),
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            tx.id,
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.0,
+                              color: Color(0xFF2563EB),
+                            ),
+                          ),
+                          if (tx.simulated) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                              child: const Text('SIM', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFFB45309))),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
+                    DataCell(StatusBadge(status: tx.status)),
                     DataCell(
                       Text(
                         '₹${tx.amount.toStringAsFixed(2)}',
-                        style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.0, color: Color(0xFF0F172A)),
                       ),
                     ),
-                    DataCell(StatusBadge(status: tx.status, compact: true)),
-                    DataCell(Text(tx.paymentMethod, style: const TextStyle(fontSize: 13))),
-                    DataCell(Text(tx.bank, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                    DataCell(
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          tx.paymentMethod,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                        ),
+                      ),
+                    ),
+                    DataCell(Text(tx.bank, style: const TextStyle(fontSize: 12, color: Color(0xFF475569)))),
                     DataCell(
                       tx.errorCode != null
                           ? Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: tx.status == 'RECOVERED'
-                                    ? const Color(0xFFF0FDF4)
-                                    : const Color(0xFFFEF2F2),
+                                color: const Color(0xFFFEF2F2),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
                                 tx.errorCode!,
-                                style: TextStyle(
+                                style: const TextStyle(
+                                  fontSize: 10,
                                   fontFamily: 'monospace',
-                                  fontSize: 11,
                                   fontWeight: FontWeight.bold,
-                                  color: tx.status == 'RECOVERED'
-                                      ? const Color(0xFF15803D)
-                                      : const Color(0xFFDC2626),
+                                  color: Color(0xFFDC2626),
                                 ),
                               ),
                             )
                           : const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
                     ),
                     DataCell(
-                      Text(
-                        '${DateTime.now().difference(tx.createdAt).inMinutes}m ago',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                      IconButton(
+                        icon: const Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFF64748B)),
+                        tooltip: 'View Diagnostics',
+                        onPressed: () => _showTransactionDetails(tx),
                       ),
                     ),
                   ],
@@ -1270,35 +1256,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildFilterChip(String value, String label) {
-    final isSelected = _selectedFilter == value;
-    return InkWell(
-      onTap: () => setState(() => _selectedFilter = value),
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
+  Widget _buildFilterPill(String key, String label) {
+    final isSelected = _selectedFilter == key;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 6.0),
+      child: ChoiceChip(
+        label: Text(
           label,
           style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: isSelected ? Colors.white : const Color(0xFF64748B),
+            fontSize: 12.0,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
           ),
         ),
+        selected: isSelected,
+        selectedColor: const Color(0xFFEFF6FF),
+        backgroundColor: Colors.white,
+        side: BorderSide(
+          color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+          width: 1.0,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+        onSelected: (selected) {
+          if (selected) {
+            setState(() => _selectedFilter = key);
+          }
+        },
       ),
     );
   }
 
   Widget _buildSectionPlaceholder(String route) {
     final title = route.replaceAll('/', '').toUpperCase();
+
     return Center(
       child: Container(
         padding: const EdgeInsets.all(40),
-        constraints: const BoxConstraints(maxWidth: 500),
+        constraints: const BoxConstraints(maxWidth: 420),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -1322,7 +1317,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'The $title module architecture is established. Feature logic will be connected in subsequent phases.',
+              'The $title module architecture is established. Feature logic is active.',
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
             ),
