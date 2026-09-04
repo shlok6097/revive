@@ -39,6 +39,171 @@ AI Recommends (Advisory) ➔ Policy Engine Decides (Enforced) ➔ Backend Execut
 
 ---
 
+# REVIVE vs Existing Payment Failure Systems
+
+A clear, technically accurate comparison between conventional payment-failure handling and REVIVE:
+
+| Capability | Existing Payment Systems | REVIVE |
+| :--- | :--- | :--- |
+| Payment failure detection | Detects and reports failed transactions | Captures detailed Razorpay failure telemetry |
+| Failure understanding | Generic failure status/reason | Classifies failures into structured categories such as `BANK_DECLINE`, `NETWORK_ERROR`, `INSUFFICIENT_FUNDS`, `INVALID_DETAILS`, `AUTHENTICATION_FAILURE` and `FRAUD_RISK` |
+| AI failure intelligence | Usually limited to reporting/analytics | Local AI analyzes failure telemetry and provides an advisory classification/recommendation |
+| Recovery decision | Often application-specific/static retry logic | AI recommendation → deterministic policy engine → governed recovery decision |
+| Risk controls | Gateway/application dependent | Explicit fraud blocking, retry limits, merchant policies and autonomy modes |
+| Merchant control | Configuration-focused | `MANUAL` / `ASSISTED` / `AUTONOMOUS` recovery governance |
+| Recovery execution | Retry may be implemented as application logic | Backend-controlled execution with confirmation and safety guards |
+| Customer recovery | Usually customer retries manually | Generates secure, single-use recovery sessions/links for guided recovery |
+| Recovery simulation | Usually not available as an end-to-end feature | Full payment-failure simulator reproduces the recovery pipeline without touching live payments |
+| Failure analytics | Basic transaction reporting | Failure categories, banks, payment methods, recovery funnel, strategy performance and recovery trends |
+| Auditability | Transaction logs | AI decision, policy decision, recovery attempt, execution and audit trail |
+| Idempotency | Depends on implementation | Webhook and recovery execution idempotency protections |
+| Payment reconciliation | Gateway status | Razorpay webhook remains authoritative for final payment reconciliation |
+| AI feedback loop | Usually not part of the recovery workflow | Recovery outcomes can become feedback data for future model training/evaluation |
+
+## What Makes REVIVE Different?
+
+REVIVE's architectural differentiation spans four core layers:
+
+### 1. From Failure Detection → Failure Intelligence
+
+Traditional systems can tell a merchant:
+
+```text
+Payment Failed
+```
+
+REVIVE preserves the structured payment failure taxonomy:
+
+```text
+BANK_DECLINE
+NETWORK_ERROR
+INSUFFICIENT_FUNDS
+INVALID_DETAILS
+AUTHENTICATION_FAILURE
+FRAUD_RISK
+UNKNOWN
+```
+
+The AI layer interprets this telemetry and produces an advisory recommendation.
+
+### 2. From AI Recommendation → Governed Decision
+
+REVIVE does not allow the AI model to execute payments.
+
+```text
+AI proposes
+    ↓
+Policy validates
+    ↓
+Backend executes
+    ↓
+Webhook confirms
+```
+
+This strict separation prevents an LLM from becoming the authority over financial actions.
+
+### 3. From Retry → Recovery
+
+REVIVE treats recovery as a complete lifecycle rather than simply retrying a failed payment:
+
+```text
+Failed Payment
+      ↓
+Failure Intelligence
+      ↓
+Policy Evaluation
+      ↓
+Recovery Strategy
+      ↓
+Recovery Attempt
+      ↓
+Customer Recovery
+      ↓
+Payment Outcome
+      ↓
+Webhook Reconciliation
+      ↓
+Analytics
+```
+
+This represents REVIVE's core product loop.
+
+### 4. From Static Rules → Adaptive Intelligence
+
+The current buildathon implementation uses a locally hosted Phi-3 Mini model.
+
+The production direction is:
+
+```text
+Historical Payment Data
+        ↓
+Failure / Recovery Outcomes
+        ↓
+Training Dataset
+        ↓
+Payment-Failure-Specialized Model
+        ↓
+Live Failure Classification
+        ↓
+Recovery Outcome
+        ↓
+New Training Signal
+        ↓
+Periodic Model Evaluation / Retraining
+```
+
+> Every transaction can contribute an outcome signal to the historical dataset. The specialized model can then be periodically evaluated and retrained/fine-tuned using accumulated, authorized and appropriately de-identified data.
+
+## REVIVE's Core Differentiator
+
+```text
+EXISTING
+
+Payment Failed
+      ↓
+Show Error
+      ↓
+Customer Retries
+```
+
+versus:
+
+```text
+REVIVE
+
+Payment Failed
+      ↓
+Understand Why
+      ↓
+AI Failure Intelligence
+      ↓
+Policy & Risk Evaluation
+      ↓
+Choose Recovery Strategy
+      ↓
+Governed Execution
+      ↓
+Customer Recovery
+      ↓
+Verify Outcome
+      ↓
+Learn From Outcome
+```
+
+> REVIVE is not another payment gateway. It is an intelligent payment-recovery orchestration layer that sits on top of payment infrastructure, converts granular payment failures into actionable intelligence, applies deterministic safety policies, and guides eligible failed payments through governed recovery.
+
+## Why This Matters
+
+* **Reduce avoidable payment abandonment.**
+* **Give merchants visibility into *why* payments fail.**
+* **Select recovery strategies based on failure context instead of blindly retrying.**
+* **Provide customer-friendly recovery journeys.**
+* **Prevent unsafe automated actions through deterministic policy controls.**
+* **Measure which recovery strategies actually work.**
+* **Build a feedback dataset for future payment-failure model improvement.**
+
+---
+
 ## 2. System Architecture
 
 ```mermaid
