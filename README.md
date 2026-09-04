@@ -21,7 +21,7 @@ Traditional automated retry mechanisms fail because:
 ### How REVIVE Solves It
 REVIVE bridges the gap between payment failure telemetry and successful settlement through a structured, multi-layer recovery pipeline:
 * **Ingests & Normalizes** granular Razorpay failure taxonomy (`errorCode`, `errorReason`, `errorSource`, `errorStep`).
-* **Classifies Root Causes** using a private, local **Phi-3 Mini** LLM to diagnose transient vs. structural payment disruptions.
+* **Classifies Root Causes** using a private, LLM to diagnose transient vs. structural payment disruptions.
 * **Enforces Deterministic Policies** through a strict rule engine that governs retry eligibility, rate limits, and risk thresholds.
 * **Executes Governed Recovery** via assisted operator approvals, automated retries, or secure, expiring customer recovery links.
 * **Reconciles Authoritatively** via Razorpay HMAC-SHA256 verified webhooks.
