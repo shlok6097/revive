@@ -2,6 +2,8 @@
 
 > **Governed Payment Failure Intelligence & Smart Recovery for Modern Digital Merchants**
 
+🌐 **Live Demo**: [https://revive-ad075.web.app](https://revive-ad075.web.app) | [https://revive-ad075.firebaseapp.com](https://revive-ad075.firebaseapp.com)
+
 REVIVE is an intelligent, policy-governed payment recovery platform built for the **Razorpay Buildathon**. It transforms failed digital transactions from revenue loss into successful recoveries by combining **local AI failure intelligence** with **deterministic safety policy enforcement**, **cryptographic customer recovery sessions**, and **authoritative Razorpay webhook reconciliation**.
 
 ---
@@ -32,6 +34,7 @@ AI Recommends (Advisory) ➔ Policy Engine Decides (Enforced) ➔ Backend Execut
 
 ### Technology Stack
 * **Frontend**: Flutter Web (Dart 3.x, Responsive Material 3 Fintech UI)
+* **Hosting**: Firebase Hosting ([revive-ad075.web.app](https://revive-ad075.web.app))
 * **Backend**: Firebase Cloud Functions (Node.js 18/20, Express, HMAC-SHA256)
 * **Data & Auth**: Cloud Firestore & Firebase Authentication (Merchant UID Scoped)
 * **Payment Gateway**: Razorpay REST API & Webhooks
@@ -763,6 +766,16 @@ The model will be accessible locally at `http://127.0.0.1:8080/v1/chat/completio
 ```bash
 flutter run -d chrome
 ```
+
+### 4. Build & Deploy to Firebase Hosting
+```bash
+# Build production web bundle
+flutter build web
+
+# Deploy to Firebase Hosting
+firebase deploy --only hosting --project revive-ad075
+```
+Live URL: **[https://revive-ad075.web.app](https://revive-ad075.web.app)**
 
 ---
 
